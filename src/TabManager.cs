@@ -18,7 +18,8 @@ namespace LoongBrowser
     public class TabManager
     {
         private readonly TabControl _tabs;
-        private CoreWebView2Environment _env;
+        // 进程内共享同一个内核环境：多窗口（右键"在新窗口中打开"）不会争抢用户数据目录
+        private static CoreWebView2Environment _env;
         private readonly List<TabInfo> _list = new List<TabInfo>();
 
         /// <summary>下载记录存储：供下载事件登记</summary>
@@ -155,6 +156,67 @@ namespace LoongBrowser
                 if (Downloads != null && e.DownloadOperation != null)
                     Downloads.Track(e.DownloadOperation);
             };
+
+            // 右键菜单 → 自定义菜单（修复默认"在新窗口中打开链接"失效问题，
+            // 并新增"在新标签页中打开链接"）；可编辑框保留默认菜单（复制/粘贴）
+            view.CoreWebView2.ContextMenuRequested += delegate(object s, CoreWebView2ContextMenuRequestedEventArgs e)
+            {
+                BuildContextMenu(view, e);
+            };
+        }
+
+        private void BuildContextMenu(WebView2 view, CoreWebView2ContextMenuRequestedEventArgs e)
+        {
+            var target = e.ContextMenuTarget;
+
+            // 输入框等可编辑场景：交给 WebView2 默认菜单（保留复制/粘贴/全选）
+            if (target != null && target.IsEditable) return;
+
+            bool isLink = target != null && target.HasLinkUri && !string.IsNullOrEmpty(target.LinkUri);
+            bool isImage = target != null && target.HasSourceUri && !string.IsNullOrEmpty(target.SourceUri);
+            var items = e.MenuItems;
+
+            // 常规导航项
+            if (view.CanGoBack)
+                items.Add(CreateItem("后退", delegate { view.GoBack(); }));
+            if (view.CanGoForward)
+                items.Add(CreateItem("前进", delegate { view.GoForward(); }));
+            items.Add(CreateItem("刷新", delegate { view.CoreWebView2.Reload(); }));
+
+            if (isLink)
+            {
+                items.Add(CreateSeparator());
+                items.Add(CreateItem("在新标签页中打开链接", delegate { NewTab(target.LinkUri); }));
+                items.Add(CreateItem("在新窗口中打开链接", delegate { Program.OpenNewWindow(MainForm.NormalizeUrl(target.LinkUri)); }));
+                items.Add(CreateItem("复制链接地址", delegate
+                {
+                    try { Clipboard.SetText(target.LinkUri); } catch (Exception) { }
+                }));
+            }
+
+            if (isImage)
+            {
+                items.Add(CreateSeparator());
+                items.Add(CreateItem("在新标签页中打开图片", delegate { NewTab(target.SourceUri); }));
+            }
+
+            if (items.Count == 0) return; // 无可显示项时保留默认菜单
+            e.Handled = true;
+        }
+
+        private CoreWebView2ContextMenuItem CreateItem(string title, Action action)
+        {
+            var item = _env.CreateContextMenuItem(title, null, CoreWebView2ContextMenuItemKind.Command);
+            item.CustomItemSelected += delegate(object s2, object e2)
+            {
+                try { action(); } catch (Exception) { }
+            };
+            return item;
+        }
+
+        private CoreWebView2ContextMenuItem CreateSeparator()
+        {
+            return _env.CreateContextMenuItem("", null, CoreWebView2ContextMenuItemKind.Separator);
         }
 
         public void NavigateCurrent(string url)

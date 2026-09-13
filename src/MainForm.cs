@@ -59,8 +59,12 @@ namespace LoongBrowser
             {
                 string path = Program.PendingUrlFile;
                 if (!File.Exists(path)) return;
-                string url = File.ReadAllText(path).Trim();
-                File.Delete(path);
+                // 原子认领：多个窗口同时轮询时，只有认领成功（重命名成功）的窗口处理该 URL
+                string claim = path + ".claim";
+                try { File.Delete(claim); } catch (Exception) { }
+                try { File.Move(path, claim); } catch (Exception) { return; }
+                string url = File.ReadAllText(claim).Trim();
+                File.Delete(claim);
                 if (url.Length == 0) return;
                 _lastUrlTick = DateTime.Now.Ticks;
                 _tabMgr.NewTab(url);

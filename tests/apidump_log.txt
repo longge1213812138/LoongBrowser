@@ -1,0 +1,11 @@
+﻿== KIND ENUM ==
+  Command
+  CheckBox
+  Radio
+  Separator
+  Submenu
+== ITEM EVENT ==
+  EVENT CustomItemSelected : EventHandler`1
+    ARGS: System.Object
+== ENV CREATE ==
+  METHOD CreateContextMenuItem(String Label,Stream iconStream,CoreWebView2ContextMenuItemKind Kind)
