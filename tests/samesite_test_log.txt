@@ -1,0 +1,12 @@
+﻿PASS  expected=True got=True  same site -> stay in tab
+PASS  expected=True got=True  same root domain -> stay
+PASS  expected=False got=False  cross site -> new tab
+PASS  expected=True got=True  subdomain -> stay
+PASS  expected=True got=True  deep subdomain -> stay
+PASS  expected=False got=False  lookalike domain -> new tab
+PASS  expected=True got=True  blank start -> stay
+PASS  expected=True got=True  about scheme -> stay
+PASS  expected=True got=True  no current page -> stay
+PASS  expected=True got=True  invalid url -> stay
+passed: 10/10
+exit=0

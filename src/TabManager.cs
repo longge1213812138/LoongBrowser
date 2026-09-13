@@ -131,11 +131,22 @@ namespace LoongBrowser
                 if (tab == Current && TabChanged != null) TabChanged(tab);
             };
 
-            // 新窗口请求 → 在本浏览器的新标签打开
+            // 新窗口请求（target="_blank" / window.open）→ 按主流浏览器规则分流：
+            //   同站跳转 → 留在当前标签页内导航（写入浏览历史，前进/后退可用）
+            //   跨站链接 → 新开标签页
             view.CoreWebView2.NewWindowRequested += delegate(object s, CoreWebView2NewWindowRequestedEventArgs e)
             {
                 e.Handled = true;
-                NewTab(e.Uri);
+                string target = e.Uri;
+                if (string.IsNullOrEmpty(target)) return;
+
+                string current = "";
+                try { current = view.CoreWebView2.Source ?? ""; } catch (Exception) { }
+
+                if (IsSameSite(current, target))
+                    view.CoreWebView2.Navigate(target);
+                else
+                    NewTab(target);
             };
 
             // 下载请求 → 交给默认下载流程保存，同时登记到下载管理
@@ -175,6 +186,42 @@ namespace LoongBrowser
             _list.Remove(tab);
             _tabs.TabPages.Remove(tab.Page);
             try { tab.View.Dispose(); } catch (Exception) { }
+        }
+
+        /// <summary>
+        /// 判断目标 URL 是否与当前页面同站（主域相同，忽略 www. 前缀）。
+        /// 同站返回 true（留在当前标签导航）；跨站返回 false（新开标签）。
+        /// 非法/内部协议（about: 等）一律视为同站，保守留在当前页。
+        /// </summary>
+        public static bool IsSameSite(string current, string target)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(target)) return true;
+
+                Uri tu;
+                if (!Uri.TryCreate(target, UriKind.Absolute, out tu)) return true;
+                if (tu.Scheme == "about" || tu.Scheme == "javascript" || tu.Scheme == "data") return true;
+
+                Uri cu;
+                if (string.IsNullOrEmpty(current) || !Uri.TryCreate(current, UriKind.Absolute, out cu)) return true;
+                if (cu.Host.Length == 0) return true; // 当前是 about:blank 等无主机页面
+
+                return NormHost(cu.Host) == NormHost(tu.Host);
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        private static string NormHost(string host)
+        {
+            // 取根域（最后两段）：cn.bing.com / www.bing.com / bing.com → bing.com
+            if (string.IsNullOrEmpty(host)) return host ?? "";
+            string[] parts = host.Split('.');
+            if (parts.Length <= 2) return host;
+            return parts[parts.Length - 2] + "." + parts[parts.Length - 1];
         }
 
         private void ShowRuntimeMissing()
