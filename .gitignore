@@ -1,0 +1,9 @@
+# Build artifacts
+dist/
+build_log.txt
+libs/
+.workbuddy/
+*.zip
+
+# extracted package cache
+temp/
