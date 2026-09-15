@@ -1,0 +1,41 @@
+﻿=== 新标签页端到端测试（真实 WebView2 + 真实 TabManager）===
+埋入测试图标: True  ->  C:\Users\91533\AppData\Roaming\LoongBrowser\favicons\8a27c9ef304e24f3704869bd2165152a60fcfff5.png
+
+内核版本: 152.0.4191.66
+
+-- A. 新标签页渲染 --
+[PASS] A1 渲染出 2 张书签卡片
+[PASS] A2 真实图标用 img（1 张）
+[PASS] A3 无图标书签用共享空白图标（1 个 .icb）
+[PASS] A3b 默认不再用首字母色块
+[PASS] A4 卡片标题正确
+[PASS] A5 图标以 data:URI 内联
+[PASS] A5b 空白图标文件已生成
+[PASS] A5c 空白图标由 CSS 背景提供
+[PASS] A6 页面标题
+[PASS] A7 地址保持内部页（about:blank）
+
+-- B. 点击桥：未收藏地址必须被拒绝 --
+[PASS] B1 未收藏地址不触发导航
+
+-- C. 点击桥：点击卡片跳转 --
+[PASS] C1 宿主收到 postMessage
+[PASS] C2 宿主据此发起导航
+
+-- D. 图标来源（官方接口 / 兜底抓取）--
+       * D0 www.bing.com → OK 200 image/x-icon 首字节=0000010001002020
+       * D0 github.com → FAIL WebException: 操作超时
+       * D0 www.baidu.com → OK 200 image/x-icon 首字节=0000010001004040
+       * D1 官方通道诊断: 事件触发 1 次, FaviconUri=https://cn.bing.com/sa/simg/favicon-trans-bg-blue-mg-png.png, 取图结果=成功，PNG 526 字节
+       * D1 导航后实际域名=cn.bing.com，书签域名=www.bing.com，官方通道产出=True
+[PASS] D1 官方通道(FaviconChanged)产出 PNG
+       * D1 兜底通道(FetchRemote)产出: True
+[PASS] D2 兜底通道抓到书签域名的图标
+[PASS] D3 归一化尺寸为 32×32
+       * D4 单个图标 1233 字节（内联成 data:URI 后约 1644 字节）
+       * D5 example.com → FAIL WebException: 远程服务器返回错误: (404) 未找到。
+[PASS] D5 404 站点被记成空白图标
+[PASS] D6 空白图为 32×32
+
+=== 端到端结果：通过 18 项，失败 0 项 ===
+

@@ -1,0 +1,57 @@
+﻿=== 新标签页（书签墙）单元测试 ===
+
+-- A. URL 安全判定（防 javascript: 注入）--
+[PASS] A1 https → 允许
+[PASS] A2 http → 允许
+[PASS] A3 file → 允许
+[PASS] A4 javascript: → 拦截
+[PASS] A5 data: → 拦截
+[PASS] A6 vbscript: → 拦截
+[PASS] A7 ftp → 拦截
+[PASS] A8 空 → 拦截
+[PASS] A9 非 URL → 拦截
+
+-- B. 内部页面判定 --
+[PASS] B1 空串
+[PASS] B2 about:blank
+[PASS] B3 真实站点
+
+-- C. 图标缓存键（host 归一）--
+[PASS] C1 大小写归一
+[PASS] C2 带端口
+[PASS] C3 file 无图标
+[PASS] C4 about 无图标
+[PASS] C5 非法
+
+-- D. 页面生成 --
+[PASS] D1 空书签显示引导语
+[PASS] D2 空书签不渲染卡片
+[PASS] D3 引导页提示收藏入口
+[PASS] D4 书签标题上屏
+[PASS] D5 标题被 HTML 转义
+[PASS] D6 危险书签不上屏
+[PASS] D7 URL 作为后备标题
+[PASS] D8 属性中的 & 被转义
+[PASS] D9 属性不得出现裸引号截断
+[PASS] D10 file:// 书签可以上屏
+[PASS] D11 有图标的用 img
+[PASS] D12 无图标的用共享空白图标
+[PASS] D12b 默认不再出现首字母色块
+[PASS] D13 点击桥脚本存在
+[PASS] D14 CSP 限制外部资源
+[PASS] D15 计数与可上屏数量一致
+[PASS] D16 图标以 data URI 内联
+[PASS] D17 开关打开后回到首字母色块
+[PASS] D17b 此时不再输出空白图标的 CSS 规则
+[PASS] D18 空白图标已生成
+[PASS] D19 空白图为 32×32
+[PASS] D20 标记前无缓存
+[PASS] D20 MarkNoIcon 后命中缓存
+
+-- E. 数量上限（性能边界）--
+[PASS] E1 卡片数量被 MaxCards(500) 限制
+[PASS] E2 空白图标整页只内联 1 份（不随书签数膨胀）
+       * E1 生成 HTML 体积: 94 KB / 505 个书签
+
+=== 结果：通过 42 项，失败 0 项 ===
+

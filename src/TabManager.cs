@@ -13,6 +13,8 @@ namespace LoongBrowser
         public WebView2 View;
         public TabPage Page;
         public string PendingUrl;
+        /// <summary>当前是否显示着"新标签页（书签墙）"，用于书签变化后精准刷新</summary>
+        public bool ShowingNewTabPage;
     }
 
     public class TabManager
@@ -24,6 +26,15 @@ namespace LoongBrowser
 
         /// <summary>下载记录存储：供下载事件登记</summary>
         public DownloadStore Downloads;
+
+        /// <summary>书签存储：新标签页（书签墙）的数据来源</summary>
+        public BookmarkStore Bookmarks;
+
+        /// <summary>注入现成的内核环境（测试或多环境复用时用；正常运行时为 null，由 NewTab 自行创建）</summary>
+        public static void SetEnvironment(CoreWebView2Environment env)
+        {
+            _env = env;
+        }
 
         /// <summary>当前选中标签变化（用于同步地址栏等 UI）</summary>
         public event Action<TabInfo> TabChanged;
@@ -66,7 +77,11 @@ namespace LoongBrowser
             return "";
         }
 
-        /// <summary>新建标签页。url 为空时打开空白页（默认主页）</summary>
+        /// <summary>
+        /// 新建标签页。
+        /// url 为空 → 显示"新标签页（书签墙）"（NewTabPage.Enabled 为 false 时回落到空白页）；
+        /// 传入具体地址 → 直接导航（启动窗口用 NewTabPage.HomeUrl 保持空白主页）。
+        /// </summary>
         public async void NewTab(string url)
         {
             var view = new WebView2();
@@ -76,7 +91,7 @@ namespace LoongBrowser
             var tab = new TabInfo();
             tab.View = view;
             tab.Page = page;
-            tab.PendingUrl = string.IsNullOrEmpty(url) ? "about:blank" : url;
+            tab.PendingUrl = string.IsNullOrEmpty(url) ? null : url;
 
             _list.Add(tab);
             _tabs.TabPages.Add(page);
@@ -113,6 +128,47 @@ namespace LoongBrowser
                 string u = tab.PendingUrl;
                 tab.PendingUrl = null;
                 view.CoreWebView2.Navigate(u);
+            }
+            else
+            {
+                ShowNewTabPage(tab);
+            }
+        }
+
+        /// <summary>把标签页渲染成"新标签页（书签墙）"</summary>
+        public void ShowNewTabPage(TabInfo tab)
+        {
+            if (tab == null || tab.View == null) return;
+            var core = tab.View.CoreWebView2;
+            if (core == null) return;
+            tab.ShowingNewTabPage = true;
+            if (!NewTabPage.Enabled)
+            {
+                core.Navigate(NewTabPage.HomeUrl);
+                return;
+            }
+            core.NavigateToString(NewTabPage.BuildHtml(Bookmarks != null ? Bookmarks.Items : null));
+            // 缺图标的书签：后台补抓，抓到一个就回来刷新一次页面
+            NewTabPage.RequestMissingIcons(Bookmarks != null ? Bookmarks.Items : null, OnIconReady);
+        }
+
+        /// <summary>图标刚就绪（后台线程）→ 回 UI 线程刷新新标签页</summary>
+        private void OnIconReady()
+        {
+            try
+            {
+                if (_tabs != null && _tabs.IsHandleCreated)
+                    _tabs.BeginInvoke(new Action(RefreshNewTabPages));
+            }
+            catch (Exception) { }
+        }
+
+        /// <summary>书签或图标变化后，刷新所有正在显示新标签页的标签</summary>
+        public void RefreshNewTabPages()
+        {
+            foreach (var t in _list)
+            {
+                if (t.ShowingNewTabPage) ShowNewTabPage(t);
             }
         }
 
@@ -162,6 +218,32 @@ namespace LoongBrowser
             view.CoreWebView2.ContextMenuRequested += delegate(object s, CoreWebView2ContextMenuRequestedEventArgs e)
             {
                 BuildContextMenu(view, e);
+            };
+
+            // 离开新标签页/空白页时清除标记（NavigateToString 的地址就是 about:blank，不会误清）
+            view.CoreWebView2.NavigationStarting += delegate(object s, CoreWebView2NavigationStartingEventArgs e)
+            {
+                if (!NewTabPage.IsInternalUrl(e.Uri)) tab.ShowingNewTabPage = false;
+            };
+
+            // 站点图标就绪 → 缓存起来给新标签页用（WebView2 官方接口，拿到的是站点声明的图标）
+            view.CoreWebView2.FaviconChanged += delegate(object s, object e)
+            {
+                FaviconCache.CaptureFromWebView(view.CoreWebView2, OnIconReady);
+            };
+
+            // 新标签页点击书签 → 页面 postMessage 回传地址，由宿主导航。
+            // 这样 file:// 等本地书签不会被内核的"禁止网页访问本地资源"规则挡住。
+            view.CoreWebView2.WebMessageReceived += delegate(object s, CoreWebView2WebMessageReceivedEventArgs e)
+            {
+                string cur = "";
+                try { cur = view.CoreWebView2.Source ?? ""; } catch (Exception) { }
+                if (!NewTabPage.IsInternalUrl(cur)) return;      // 只接受新标签页/空白页发来的请求
+                string target = null;
+                try { target = e.TryGetWebMessageAsString(); } catch (Exception) { }
+                if (string.IsNullOrEmpty(target)) return;
+                if (Bookmarks == null || !Bookmarks.Contains(target)) return;  // 只允许跳到已收藏的地址
+                view.CoreWebView2.Navigate(target);
             };
         }
 

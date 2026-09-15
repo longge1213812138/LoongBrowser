@@ -18,6 +18,9 @@ namespace LoongBrowser
         private static readonly string FilePath = Path.Combine(AppPaths.DataDir, "bookmarks.json");
         public List<BookmarkItem> Items = new List<BookmarkItem>();
 
+        /// <summary>书签增/删/改后触发（新标签页据此刷新）</summary>
+        public event Action Changed;
+
         public BookmarkStore()
         {
             var data = JsonStore.Load<List<BookmarkItem>>(FilePath);
@@ -27,12 +30,36 @@ namespace LoongBrowser
         public void Save()
         {
             JsonStore.Save(FilePath, Items);
+            RaiseChanged();
         }
 
         public void Add(string title, string url)
         {
             Items.Add(new BookmarkItem { Title = title, Url = url });
             Save();
+        }
+
+        /// <summary>删除一个书签</summary>
+        public void Remove(BookmarkItem item)
+        {
+            if (item == null) return;
+            if (Items.Remove(item)) Save();
+        }
+
+        /// <summary>该地址是否已收藏（宿主用它校验新标签页发来的跳转请求）</summary>
+        public bool Contains(string url)
+        {
+            if (string.IsNullOrEmpty(url)) return false;
+            foreach (var b in Items)
+                if (b != null && string.Equals(b.Url, url, StringComparison.OrdinalIgnoreCase)) return true;
+            return false;
+        }
+
+        private void RaiseChanged()
+        {
+            Action h = Changed;
+            if (h == null) return;
+            try { h(); } catch (Exception) { }
         }
     }
 
@@ -116,8 +143,7 @@ namespace LoongBrowser
             var b = _list.SelectedItems[0].Tag as BookmarkItem;
             if (b != null)
             {
-                _store.Items.Remove(b);
-                _store.Save();
+                _store.Remove(b);
                 Reload();
             }
         }

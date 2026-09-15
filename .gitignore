@@ -7,3 +7,6 @@ libs/
 
 # extracted package cache
 temp/
+
+# test scratch output (compiled test exe + WebView2 throwaway profile)
+tests/_out*/

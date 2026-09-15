@@ -40,8 +40,20 @@ namespace LoongBrowser
 
             _tabMgr = new TabManager(_tabs);
             _tabMgr.Downloads = _downloads;
+            _tabMgr.Bookmarks = _bookmarks;
             _tabMgr.TabChanged += OnTabChanged;
-            _tabMgr.NewTab(initialUrl);
+
+            // 书签增删后刷新正在显示的新标签页（书签墙）
+            _bookmarks.Changed += delegate
+            {
+                if (_tabMgr != null) _tabMgr.RefreshNewTabPages();
+            };
+
+            // 启动窗口：保持"默认主页 = 空白页"的设定；
+            // 只有"＋新标签"（NewTab(null)）才展示书签墙（NewTabPage.UseForStartup 可改为启动即显示）
+            _tabMgr.NewTab(string.IsNullOrEmpty(initialUrl) && !NewTabPage.UseForStartup
+                ? NewTabPage.HomeUrl
+                : initialUrl);
 
             // 轮询接收后续实例转发来的 URL（单实例机制）
             _lastUrlTick = DateTime.Now.Ticks;
@@ -111,6 +123,17 @@ namespace LoongBrowser
                     CoreWebView2BrowsingDataKinds.Cookies, "清理 Cookie（将退出所有网站的登录状态）");
             });
             mTool.DropDownItems.Add(new ToolStripSeparator());
+            var miNewTab = new ToolStripMenuItem("新标签页显示书签");
+            miNewTab.CheckOnClick = true;
+            miNewTab.Checked = NewTabPage.Enabled;
+            miNewTab.Click += delegate(object s, EventArgs e)
+            {
+                var mi = s as ToolStripMenuItem;
+                if (mi == null) return;
+                NewTabPage.Enabled = mi.Checked;
+                _tabMgr.RefreshNewTabPages();     // 关掉时新标签页会回到空白页
+            };
+            mTool.DropDownItems.Add(miNewTab);
             mTool.DropDownItems.Add("设为默认浏览器...", null, delegate { SetDefaultBrowser(); });
             mTool.DropDownItems.Add(new ToolStripSeparator());
             mTool.DropDownItems.Add("关于 LoongBrowser", null, delegate { ShowAbout(); });
@@ -309,7 +332,9 @@ namespace LoongBrowser
             {
                 try
                 {
-                    _addressBox.Text = tab.View.Source != null ? tab.View.Source.ToString() : "";
+                    string src = tab.View.Source != null ? tab.View.Source.ToString() : "";
+                    // 新标签页/空白页不把 about:blank 显示到地址栏
+                    _addressBox.Text = NewTabPage.IsInternalUrl(src) ? "" : src;
                 }
                 catch (Exception) { }
             }
