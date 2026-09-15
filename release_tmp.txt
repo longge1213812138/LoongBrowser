@@ -1,6 +1,0 @@
-﻿--- dist listing ---
-LoongBrowser.exe  33280 bytes  09/15/2026 21:47:21
-LoongBrowserSetup.exe  15360 bytes  09/15/2026 21:47:21
-Microsoft.Web.WebView2.Core.dll  698208 bytes  08/23/2026 23:21:22
-Microsoft.Web.WebView2.WinForms.dll  38752 bytes  08/23/2026 23:21:00
-WebView2Loader.dll  163680 bytes  08/23/2026 23:20:48
