@@ -314,7 +314,7 @@ namespace LoongBrowser
         {
             string ver = _tabMgr.ActiveBrowserVersion();
             MessageBox.Show(
-                "LoongBrowser v1.0.1\n" +
+                "LoongBrowser v1.1.0\n" +
                 "极简 Chromium 内核浏览器（WebView2）\n" +
                 (ver.Length > 0 ? "内核版本：" + ver + "\n" : "") +
                 "数据目录：%APPDATA%\\LoongBrowser",

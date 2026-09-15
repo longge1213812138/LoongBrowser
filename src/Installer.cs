@@ -90,7 +90,7 @@ namespace LoongBrowserSetup
                 using (var k = Registry.CurrentUser.CreateSubKey(UninstallKey))
                 {
                     k.SetValue("DisplayName", AppTitle + " (LoongBrowser)");
-                    k.SetValue("DisplayVersion", "1.0.1");
+                    k.SetValue("DisplayVersion", "1.1.0");
                     k.SetValue("InstallLocation", targetDir);
                     k.SetValue("DisplayIcon", exe + ",0");
                     k.SetValue("UninstallString", "\"" + setupPath + "\" /uninstall");
@@ -324,7 +324,7 @@ namespace LoongBrowserSetup
             MinimizeBox = false;
 
             var label = new Label();
-            label.Text = Program.AppTitle + " v1.0.1\n基于 Chromium 内核 (WebView2)\n\n选择安装位置：";
+            label.Text = Program.AppTitle + " v1.1.0\n基于 Chromium 内核 (WebView2)\n\n选择安装位置：";
             label.Location = new Point(18, 14);
             label.Size = new Size(510, 66);
             label.AutoSize = false;
