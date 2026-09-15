@@ -90,7 +90,7 @@ namespace LoongBrowserSetup
                 using (var k = Registry.CurrentUser.CreateSubKey(UninstallKey))
                 {
                     k.SetValue("DisplayName", AppTitle + " (LoongBrowser)");
-                    k.SetValue("DisplayVersion", "1.0.0");
+                    k.SetValue("DisplayVersion", "1.0.1");
                     k.SetValue("InstallLocation", targetDir);
                     k.SetValue("DisplayIcon", exe + ",0");
                     k.SetValue("UninstallString", "\"" + setupPath + "\" /uninstall");
