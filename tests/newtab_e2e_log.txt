@@ -24,7 +24,7 @@
 
 -- D. 图标来源（官方接口 / 兜底抓取）--
        * D0 www.bing.com → OK 200 image/x-icon 首字节=0000010001002020
-       * D0 github.com → FAIL WebException: 操作超时
+       * D0 github.com → OK 200 image/x-icon 首字节=0000010002001010
        * D0 www.baidu.com → OK 200 image/x-icon 首字节=0000010001004040
        * D1 官方通道诊断: 事件触发 1 次, FaviconUri=https://cn.bing.com/sa/simg/favicon-trans-bg-blue-mg-png.png, 取图结果=成功，PNG 526 字节
        * D1 导航后实际域名=cn.bing.com，书签域名=www.bing.com，官方通道产出=True

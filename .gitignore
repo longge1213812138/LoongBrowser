@@ -8,5 +8,13 @@ libs/
 # extracted package cache
 temp/
 
+# scratch/diagnostic files written by tooling (must never reach a commit)
+*_tmp.txt
+*_tmp.md
+diag_*.txt
+chk.txt
+allres_*.txt
+status_tmp.txt
+
 # test scratch output (compiled test exe + WebView2 throwaway profile)
 tests/_out*/

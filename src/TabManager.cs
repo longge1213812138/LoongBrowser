@@ -30,6 +30,9 @@ namespace LoongBrowser
         /// <summary>书签存储：新标签页（书签墙）的数据来源</summary>
         public BookmarkStore Bookmarks;
 
+        /// <summary>浏览历史：每次成功导航记一条（内部页与非 http/https/file 不记）</summary>
+        public HistoryStore History;
+
         /// <summary>注入现成的内核环境（测试或多环境复用时用；正常运行时为 null，由 NewTab 自行创建）</summary>
         public static void SetEnvironment(CoreWebView2Environment env)
         {
@@ -222,7 +225,33 @@ namespace LoongBrowser
             {
                 string title = view.CoreWebView2.DocumentTitle;
                 if (string.IsNullOrEmpty(title)) title = "新标签页";
-                tab.Page.Text = title.Length > 20 ? title.Substring(0, 20) + "…" : title;
+                // 不在这里手工截断：标签宽度是统一固定的，超出部分由自绘做省略号，
+                // 完整标题通过悬停提示看（TabControl.ShowToolTips + ToolTipText）
+                tab.Page.Text = title;
+                tab.Page.ToolTipText = title;
+
+                // 标题常常晚于导航完成才就绪 → 回填到历史里刚记的那一条
+                if (History != null)
+                {
+                    string url = "";
+                    try { url = view.CoreWebView2.Source ?? ""; } catch (Exception) { }
+                    History.TouchTitle(url, title);
+                }
+            };
+
+            // 导航成功 → 记一条历史
+            view.CoreWebView2.NavigationCompleted += delegate(object s, CoreWebView2NavigationCompletedEventArgs e)
+            {
+                if (!e.IsSuccess || History == null) return;
+                string url = "";
+                string title = "";
+                try
+                {
+                    url = view.CoreWebView2.Source ?? "";
+                    title = view.CoreWebView2.DocumentTitle ?? "";
+                }
+                catch (Exception) { return; }
+                History.Add(title, url);    // Add 内部会过滤内部页与非 http/https/file 地址
             };
 
             view.CoreWebView2.SourceChanged += delegate

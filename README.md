@@ -23,9 +23,18 @@
 
 - **地址栏**：自动识别四类输入 —— 完整网址（原样打开）、本地路径（盘符 / UNC / 已存在的文件 → 规范化为 `file:///`）、带点号的域名（补 `https://`）、其余当关键词交给 Bing 搜索
 - 前进 / 后退 / 刷新；多标签页
+- **标签页外观**：标题字号加大（10.5pt）、标签之间留出明显间隙、**所有标签宽度统一**（210px 固定尺寸，超出用省略号，悬停看完整标题）
 - **链接分流**：同站跳转留在当前标签（历史可回溯），跨站链接才新开标签页
 - **右键菜单**：后退 / 前进 / 刷新、「在新标签页中打开链接」、「在新窗口中打开链接」、「复制链接地址」、「在新标签页中打开图片」；输入框场景保留系统默认的复制/粘贴菜单
 - **弹出小窗（含置顶）**：站点用 `window.open` 弹出的小窗（B 站画中画、OAuth 授权窗等）由应用**自建窗口**承载 —— 默认**窗口置顶**（切到其他应用时仍显示在最前），窗口顶部带「窗口置顶」开关可随时开关；主窗口「工具 → 小窗默认置顶」可改默认值并会记住；窗口尺寸按站点请求设置，页面调用 `window.close()` 时窗口自动关闭
+
+### 历史记录
+
+- 菜单「历史 → 查看历史记录...」：按天分组（今天 / 昨天 / 日期）、**新→旧**排列，列出每条的时间、标题、网址
+- **逐条删除**（支持多选批量删）与**一键清空全部**（会一并清掉内核侧的历史库，避免两处不一致）
+- 双击某条即可在新标签页打开
+- 相邻同址的重复访问（刷新、重定向）自动合并为一条并刷新时间；内部页（新标签页、`about:blank`）不记录
+- 数据落在 `%APPDATA%\LoongBrowser\history.json`，默认最多保留 3000 条（超出丢最旧的）
 
 ### 新标签页（书签墙）
 
@@ -70,6 +79,7 @@
 | 路径 | 内容 |
 |---|---|
 | `%APPDATA%\LoongBrowser\bookmarks.json` | 书签 |
+| `%APPDATA%\LoongBrowser\history.json` | 浏览历史（最多 3000 条） |
 | `%APPDATA%\LoongBrowser\downloads.json` | 下载记录 |
 | `%APPDATA%\LoongBrowser\favicons\` | 网站图标缓存（一个域名一个 PNG，删掉即自动重建） |
 | `%APPDATA%\LoongBrowser\popup.json` | 小窗设置（是否默认置顶） |
@@ -111,8 +121,11 @@ powershell -ExecutionPolicy Bypass -File build.ps1
 | 新标签页（端到端） | `powershell -File tests\run_newtab_e2e.ps1` | 真实内核 + 真实 `TabManager`：渲染、图标两条通道、点击桥与越权拒绝 | 18 |
 | 画中画弹窗（端到端） | `powershell -File tests\run_pip_popup_e2e.ps1` | 真实内核：复现修复前「当前页被顶成空白页」、验证修复后页面不受影响且小窗被允许；并探测真实 B 站视频页 | 8 |
 | 小窗置顶（端到端） | `powershell -File tests\run_popup_window_e2e.ps1` | 真实内核 + 真实 `TabManager`：小窗创建、默认置顶、开关切换与记忆、按请求尺寸、opener 可写入小窗、`window.close()` 联动关闭 | 12 |
+| 浏览历史（单元） | `powershell -File tests\run_history_test.ps1` | 记录与排序、只记可导航地址、同址去重、标题回填、删除/清空、条数上限、落盘与重载、时间分组 | 27 |
+| 浏览历史（端到端） | `powershell -File tests\run_history_e2e.ps1` | 真实内核 + 真实 `TabManager`：访问真实站点写入历史并带标题、内部页不记、新→旧、刷新去重、删除与清空落盘 | 13 |
+| 标签页外观 | `powershell -File tests\run_tabstrip_test.ps1` | 字号/固定尺寸/单行/悬停提示、每个标签宽高一致、相邻不重叠；并输出 `tests\ui_tabs_preview.png` 预览图供人工核对观感 | 12 |
 
-运行结果写入 `tests\*_log.txt`。合计 **147** 项用例。
+运行结果写入 `tests\*_log.txt`。合计 **199** 项用例。
 
 ---
 
@@ -164,6 +177,12 @@ tests/                   测试与 API 诊断工具（见上表），以及各�
 | `FaviconCache.IconSize` | `32` | 图标边长（同时是缓存尺寸） |
 | `PopupWindow.DefaultAlwaysOnTop` | `true` | 弹出小窗是否默认窗口置顶（工具菜单可改，会写入 `popup.json`） |
 | `PopupWindow.BarHeight` | `30` | 小窗顶部工具条高度（置顶开关所在的那一条） |
+| `HistoryStore.MaxItems` | `3000` | 历史最多保留多少条（超出丢最旧的） |
+| `HistoryStore.DedupeSeconds` | `30` | 相邻同址访问的去重窗口（秒）；设为负数=每次访问都记 |
+| `HistoryStore.FilePath` | `%APPDATA%\...\history.json` | 历史数据文件位置 |
+| `TabStrip.TabWidth` / `TabHeight` | `210` / `40` | 标签统一尺寸 |
+| `TabStrip.GapX` / `GapTop` | `9` / `6` | 标签之间的水平间隔 / 与顶部的距离 |
+| `TabStrip.TitleSize` | `10.5` | 标签标题字号（pt） |
 
 ---
 
@@ -174,6 +193,8 @@ tests/                   测试与 API 诊断工具（见上表），以及各�
 - **隐私**：图标兜底抓取会向每个书签域名各发 1 次 `https://<host>/favicon.ico` 请求；不想暴露书签域名请关闭 `FaviconCache.EnableRemoteFetch`
 - **大书签量**：书签墙一次渲染全部（上限 500 张卡片），上千条建议改为分页或虚拟滚动
 - **默认程序**：Windows 10/11 不允许程序自行抢占默认浏览器，需要在系统设置中手动确认一次
+- **历史记录是本应用自己记的**：WebView2 只提供「清除历史」接口（`ClearBrowsingDataAsync`），**没有读取历史的 API**，所以历史由应用记录在 `%APPDATA%\LoongBrowser\history.json`。因此它只包含在本应用里访问过的页面（不会同步系统里其它浏览器的历史），清空历史也会一并清掉内核侧的历史库。
+- **标签页**：宽度统一为固定值，标题过长会省略号截断（悬停可看完整标题）；标签过多时单行滚动，不会折行
 - **平台**：仅 Windows 10/11（依赖 WebView2 与 .NET Framework）
 
 ---

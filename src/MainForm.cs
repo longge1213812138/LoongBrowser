@@ -17,6 +17,7 @@ namespace LoongBrowser
         private ToolStripTextBox _addressBox;
         private BookmarkStore _bookmarks;
         private DownloadStore _downloads;
+        private HistoryStore _history;
 
         public MainForm(string initialUrl)
         {
@@ -27,12 +28,14 @@ namespace LoongBrowser
 
             _bookmarks = new BookmarkStore();
             _downloads = new DownloadStore();
+            _history = new HistoryStore();
 
             BuildMenu();
             BuildToolbar();
 
             _tabs = new TabControl();
             _tabs.Dock = DockStyle.Fill;
+            TabStrip.Style(_tabs);            // 更大字号、统一尺寸、标签之间留间隔
 
             Controls.Add(_tabs);
             Controls.Add(_toolbar);
@@ -41,6 +44,7 @@ namespace LoongBrowser
             _tabMgr = new TabManager(_tabs);
             _tabMgr.Downloads = _downloads;
             _tabMgr.Bookmarks = _bookmarks;
+            _tabMgr.History = _history;
             _tabMgr.TabChanged += OnTabChanged;
 
             // 书签增删后刷新正在显示的新标签页（书签墙）
@@ -106,6 +110,13 @@ namespace LoongBrowser
                 new DownloadDialog(_downloads).Show(this);
             });
 
+            var mHistory = new ToolStripMenuItem("历史(&H)");
+            mHistory.DropDownItems.Add("查看历史记录...", null, delegate
+            {
+                new HistoryDialog(_history, url => _tabMgr.NewTab(url)).Show(this);
+            });
+            mHistory.DropDownItems.Add("清空全部历史记录", null, delegate { ClearAllHistory(); });
+
             var mTool = new ToolStripMenuItem("工具(&T)");
             mTool.DropDownItems.Add("清理缓存", null, delegate
             {
@@ -151,6 +162,7 @@ namespace LoongBrowser
 
             _menu.Items.Add(mBookmark);
             _menu.Items.Add(mDownload);
+            _menu.Items.Add(mHistory);
             _menu.Items.Add(mTool);
         }
 
@@ -220,9 +232,23 @@ namespace LoongBrowser
 
         // ---------- 功能动作 ----------
 
-        private void NavigateFromAddress()
+        /// <summary>清空全部历史：应用自己记的那份 + 内核的历史库，避免两处不一致</summary>
+        private async void ClearAllHistory()
         {
-            string t = _addressBox.Text.Trim();
+            var dr = MessageBox.Show(this, "确定要清空全部历史记录吗？此操作不可撤销。", "清空历史记录",
+                MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+            if (dr != DialogResult.Yes) return;
+
+            _history.Clear();
+            bool kernelOk = await BrowserCleaner.ClearAsync(() => _tabMgr.ActiveCore(),
+                CoreWebView2BrowsingDataKinds.BrowsingHistory);
+            MessageBox.Show(this,
+                kernelOk ? "历史记录已清空。" : "应用内的历史记录已清空；内核历史需要先打开一个网页后再清理。",
+                "提示");
+        }
+
+        private void NavigateFromAddress()
+        {            string t = _addressBox.Text.Trim();
             if (t.Length == 0) return;
             _tabMgr.NavigateCurrent(NormalizeUrl(t));
         }

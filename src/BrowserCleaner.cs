@@ -36,5 +36,23 @@ namespace LoongBrowser
                 MessageBox.Show(owner, "清理失败：" + ex.Message, "错误");
             }
         }
+
+        /// <summary>
+        /// 静默清理（不弹确认框/结果框）：调用方自己组织交互时用。
+        /// 返回是否真的清成功了（内核没就绪会返回 false）。
+        /// </summary>
+        public static async System.Threading.Tasks.Task<bool> ClearAsync(
+            Func<CoreWebView2> coreGetter, CoreWebView2BrowsingDataKinds kinds)
+        {
+            CoreWebView2 core = null;
+            try { core = coreGetter(); } catch (Exception) { }
+            if (core == null) return false;
+            try
+            {
+                await core.Profile.ClearBrowsingDataAsync(kinds);
+                return true;
+            }
+            catch (Exception) { return false; }
+        }
     }
 }
