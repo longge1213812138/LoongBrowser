@@ -64,7 +64,7 @@
 
 | 文件 | 说明 |
 |---|---|
-| `LoongBrowser-v1.1.0-win64.zip` | **推荐**：完整安装包（安装器 + 主程序 + 3 个依赖 DLL）。解压后双击 `LoongBrowserSetup.exe` |
+| `LoongBrowser-v1.1.1-win64.zip` | **推荐**：完整安装包（安装器 + 主程序 + 3 个依赖 DLL）。解压后双击 `LoongBrowserSetup.exe` |
 | `LoongBrowserSetup.exe` | 安装器单文件。⚠️ 它从**自身所在目录**复制文件，必须与 `LoongBrowser.exe` 及 3 个依赖 DLL 放在同一目录才能工作 |
 
 安装：选择安装位置（默认 `%LocalAppData%\Programs\LoongBrowser`，可自定义）→ 点「安装」→ 可选引导设置默认浏览器。
@@ -79,7 +79,7 @@
 | 路径 | 内容 |
 |---|---|
 | `%APPDATA%\LoongBrowser\bookmarks.json` | 书签 |
-| `%APPDATA%\LoongBrowser\history.json` | 浏览历史（最多 3000 条） |
+| `%APPDATA%\LoongBrowser\history.json` | 浏览历史（最多 3000 条，**DPAPI 加密存储**，只有当前用户能解开） |
 | `%APPDATA%\LoongBrowser\downloads.json` | 下载记录 |
 | `%APPDATA%\LoongBrowser\favicons\` | 网站图标缓存（一个域名一个 PNG，删掉即自动重建） |
 | `%APPDATA%\LoongBrowser\popup.json` | 小窗设置（是否默认置顶） |

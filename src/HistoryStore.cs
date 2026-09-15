@@ -21,7 +21,10 @@ namespace LoongBrowser
 
     public class HistoryStore
     {
-        /// <summary>数据文件位置：%APPDATA%\LoongBrowser\history.json（测试可指向临时文件）</summary>
+        /// <summary>
+        /// 数据文件位置：%APPDATA%\LoongBrowser\history.json（测试可指向临时文件）。
+        /// 内容是 DPAPI 加密的（见 JsonStore.SaveProtected），不再是明文 JSON。
+        /// </summary>
         public static string FilePath = Path.Combine(AppPaths.DataDir, "history.json");
 
         /// <summary>最多保留多少条（超出丢最旧的），防止文件无限增长</summary>
@@ -41,14 +44,14 @@ namespace LoongBrowser
 
         public HistoryStore()
         {
-            var data = JsonStore.Load<List<HistoryItem>>(FilePath);
+            var data = JsonStore.LoadProtected<List<HistoryItem>>(FilePath);
             if (data != null) Items = data;
             Sort();
         }
 
         public void Save()
         {
-            JsonStore.Save(FilePath, Items);
+            JsonStore.SaveProtected(FilePath, Items);
             RaiseChanged();
         }
 

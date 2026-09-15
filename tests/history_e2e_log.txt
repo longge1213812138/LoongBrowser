@@ -8,7 +8,7 @@
 [PASS] A2 记的是真实地址
 [PASS] A3 带上了页面标题（不是裸网址）
 [PASS] A4 时间戳是刚才
-       * A5 记录: Example Domain | https://example.com/ | 00:01:54
+       * A5 记录: Example Domain | https://example.com/ | 00:28:01
 
 -- B. 内部页不记 --
 [PASS] B1 打开新标签页不产生历史

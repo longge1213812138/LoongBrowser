@@ -20,6 +20,7 @@ $refs = @(
     "System.Web.Extensions.dll",
     "System.Runtime.WindowsRuntime.dll",
     "System.Runtime.Serialization.dll",
+    "System.Security.dll",
     (Join-Path $root "libs\Microsoft.Web.WebView2.Core.dll"),
     (Join-Path $root "libs\Microsoft.Web.WebView2.WinForms.dll")
 )

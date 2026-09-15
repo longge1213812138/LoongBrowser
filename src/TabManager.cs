@@ -104,6 +104,9 @@ namespace LoongBrowser
             {
                 try
                 {
+                    // 内核数据目录（Cookie/LocalStorage/缓存）先开启 EFS 加密再交给内核：
+                    // 目录为空时效果最好（之后写进去的文件全部由文件系统加密）。不支持 EFS 的系统会静默跳过。
+                    AppPaths.EnsureUserDataDirEncrypted();
                     _env = await CoreWebView2Environment.CreateAsync(null, AppPaths.UserDataDir);
                 }
                 catch (Exception)
