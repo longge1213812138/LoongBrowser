@@ -1,0 +1,39 @@
+﻿=== 画中画弹窗端到端测试（真实 WebView2）===
+内核版本: 152.0.4191.66
+启动参数: --disable-popup-blocking（让脚本触发的 window.open 也能产生弹窗请求，便于自动化复现）
+
+-- A. 复现修复前的行为（旧逻辑：一律接管弹窗 → 在当前标签内导航）--
+[PASS] A1 宿主页面已就绪
+       * A2 弹窗请求里的 Uri = about:blank
+       * A3 window.open 返回值 = null
+[PASS] A4 弹窗请求确实被触发（window.open('about:blank')）
+[PASS] A5 旧逻辑下 window.open 拿不到窗口（返回 null）
+[PASS] A6 旧逻辑把当前页顶成了空白页（复现用户看到的症状）
+
+-- B. 修复后：走真实 TabManager --
+[PASS] B1 当前标签是新标签页（书签墙）
+       * B2 window.open 返回值 = opened
+[PASS] B3 弹出小窗被内核接受（拿到真正的窗口，而不是 null）
+[PASS] B4 当前页没有被顶掉
+
+-- C. 真实探测 B 站（网络/登录受限时跳过，不影响上面的结论）--
+       * C1 已打开首页，标题=哔哩哔哩 (゜-゜)つロ 干杯~-bilibili
+       * C1b 首页 DOM 长度=2281
+       * C2 API 取号结果: BV1mwY96jEom
+       * C2 打开视频页: https://www.bilibili.com/video/BV1mwY96jEom
+       * C3 document.pictureInPictureEnabled = true
+       * C4 页面存在 <video> = true
+       * C5 匹配到画中画相关元素: 5##DIV|bpx-player-ctrl-setting-checkbox bpx-player-ctrl ;; INPUT|bui-checkbox-input ;; DIV|bpx-player-ctrl-btn bpx-player-ctrl-pip ;; DIV|bpx-player-ctrl-btn-icon bpx-player-ctrl-pip-ent ;; DIV|bpx-player-ctrl-btn-icon bpx-player-ctrl-pip-lea
+       * C5b 视频是否在播放: true
+       * C5c 画中画按钮是否可用: bpx-player-ctrl-btn bpx-player-ctrl-pip disabled=false aria=null
+       * C6 已点击的画中画控件: clicked:bpx-player-ctrl-btn bpx-player-ctrl-pip
+       * C7 点击后 window.open 的调用记录: (无 window.open 调用)
+       * C7b 点击时抛出的异常: (无)
+       * C7c 是否已进入标准画中画: false
+       * C7d requestPictureInPicture 调用记录: (未被调用)
+       * C8 点击后当前标签地址: https://www.bilibili.com/video/BV1mwY96jEom/
+[PASS] C9 点击画中画后当前标签仍停在视频页（没有被顶成空白页）
+
+
+=== 端到端结果：通过 8 项，失败 0 项 ===
+

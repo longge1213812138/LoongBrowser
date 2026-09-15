@@ -1,0 +1,39 @@
+﻿=== 弹窗分流规则单元测试 ===
+
+-- A. 程序化弹出窗必须交回内核（本次修复点）--
+[PASS] A1 about:blank（画中画小窗）
+[PASS] A2 空 URI
+[PASS] A3 javascript:
+[PASS] A4 data:
+[PASS] A5 blob:
+[PASS] A6 带窗口尺寸的空白小窗（真实形态）
+[PASS] A7 当前页本身就是空白页时的 about:blank
+
+-- B. 真实地址维持原有分流不变 --
+[PASS] B1 同站另一个视频
+[PASS] B2 同根域子域
+[PASS] B3 跨站
+[PASS] B4 仿冒域名
+[PASS] B5 http 站内
+[PASS] B6 file:// 从网页打开
+[PASS] B7 新标签页里打开链接
+
+-- C. 旧规则对照：bug 是怎么产生的 --
+[PASS] C1 旧规则下 IsSameSite(B站视频, about:blank) == true（这就是陷阱）
+[PASS] C2 旧规则因此会走 NavigateCurrent → 当前标签变空白页
+[PASS] C3 修复后同一输入不再走 NavigateCurrent
+[PASS] C4 修复后也不会误开成新标签页（必须交回内核）
+
+-- D. IsNavigable 判定 --
+[PASS] D1 https → 可导航
+[PASS] D2 http → 可导航
+[PASS] D3 file → 可导航
+[PASS] D4 about → 非页面
+[PASS] D5 javascript → 非页面
+[PASS] D6 data → 非页面
+[PASS] D7 blob → 非页面
+[PASS] D8 空 → 非页面
+[PASS] D9 非 URL → 非页面
+
+=== 结果：通过 27 项，失败 0 项 ===
+

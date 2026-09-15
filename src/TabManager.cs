@@ -188,22 +188,30 @@ namespace LoongBrowser
                 if (tab == Current && TabChanged != null) TabChanged(tab);
             };
 
-            // 新窗口请求（target="_blank" / window.open）→ 按主流浏览器规则分流：
-            //   同站跳转 → 留在当前标签页内导航（写入浏览历史，前进/后退可用）
-            //   跨站链接 → 新开标签页
+            // 新窗口请求（target="_blank" 链接 / window.open）分流。
+            //   真实地址（http/https/file）：同站 → 留在当前标签内导航（写入历史），跨站 → 新开标签页
+            //   程序化弹出窗（about:blank / javascript: / data: / blob:）：交回内核开原生窗口
+            //     —— 这类弹窗没有可用地址，由 opener 脚本往里写内容（B 站画中画小窗、OAuth 弹窗、打印预览）。
+            //        以前一律接管并在当前标签里 Navigate，导致画中画把视频页导航成了空白页。
             view.CoreWebView2.NewWindowRequested += delegate(object s, CoreWebView2NewWindowRequestedEventArgs e)
             {
-                e.Handled = true;
-                string target = e.Uri;
-                if (string.IsNullOrEmpty(target)) return;
-
                 string current = "";
                 try { current = view.CoreWebView2.Source ?? ""; } catch (Exception) { }
 
-                if (IsSameSite(current, target))
-                    view.CoreWebView2.Navigate(target);
-                else
-                    NewTab(target);
+                switch (RoutePopup(current, e.Uri))
+                {
+                    case PopupAction.NavigateCurrent:
+                        e.Handled = true;
+                        view.CoreWebView2.Navigate(e.Uri);
+                        break;
+                    case PopupAction.OpenTab:
+                        e.Handled = true;
+                        NewTab(e.Uri);
+                        break;
+                    default:
+                        e.Handled = false;   // 交回内核：opener 需要拿到真正的 window 句柄
+                        break;
+                }
             };
 
             // 下载请求 → 交给默认下载流程保存，同时登记到下载管理
@@ -332,10 +340,45 @@ namespace LoongBrowser
             try { tab.View.Dispose(); } catch (Exception) { }
         }
 
+        /// <summary>弹窗（target="_blank" / window.open）的处理方式</summary>
+        public enum PopupAction
+        {
+            /// <summary>交回内核按原生弹窗打开（程序化小窗 / 画中画 / OAuth / 打印预览等）</summary>
+            Native,
+            /// <summary>同站链接：留在当前标签内导航</summary>
+            NavigateCurrent,
+            /// <summary>跨站链接：新开标签页</summary>
+            OpenTab
+        }
+
+        /// <summary>
+        /// 弹窗分流规则。只有真实地址（http/https/file）才做"同站留标签、跨站开标签"；
+        /// about:blank、javascript:、data:、blob: 这类**程序化弹出窗**必须交回内核：
+        /// 它们没有可用地址，内容由 opener 脚本写入（B 站画中画小窗就是 window.open('about:blank')），
+        /// 若在当前标签里 Navigate 就会把正在看的页面顶掉，变成空白页。
+        /// </summary>
+        public static PopupAction RoutePopup(string currentUrl, string targetUri)
+        {
+            if (!IsNavigable(targetUri)) return PopupAction.Native;
+            if (IsSameSite(currentUrl, targetUri)) return PopupAction.NavigateCurrent;
+            return PopupAction.OpenTab;
+        }
+
+        /// <summary>是否是"可当作页面打开"的地址（http / https / file）；其余协议（about/javascript/data/blob）不算</summary>
+        public static bool IsNavigable(string uri)
+        {
+            if (string.IsNullOrEmpty(uri)) return false;
+            Uri u;
+            if (!Uri.TryCreate(uri, UriKind.Absolute, out u)) return false;
+            string s = u.Scheme.ToLowerInvariant();
+            return s == "http" || s == "https" || s == "file";
+        }
+
         /// <summary>
         /// 判断目标 URL 是否与当前页面同站（主域相同，忽略 www. 前缀）。
         /// 同站返回 true（留在当前标签导航）；跨站返回 false（新开标签）。
-        /// 非法/内部协议（about: 等）一律视为同站，保守留在当前页。
+        /// 注意：本方法只用于"真实地址"的比较，调用方须先用 <see cref="IsNavigable"/> 过滤；
+        /// 非法/内部协议（about: 等）在这里仍然保守地返回 true。
         /// </summary>
         public static bool IsSameSite(string current, string target)
         {

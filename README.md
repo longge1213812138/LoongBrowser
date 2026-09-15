@@ -103,11 +103,13 @@ powershell -ExecutionPolicy Bypass -File build.ps1
 |---|---|---|---|
 | URL 归一化 | `powershell -File tests\run_normalizeurl_test.ps1` | 本地路径 / UNC / 含空格与中文路径、协议补全、搜索回落、过滤 `javascript:` | 25 |
 | 同站判定 | `powershell -File tests\run_samesite_test.ps1` | 链接分流规则（同站 / 跨站 / 仿冒域名） | 10 |
+| 弹窗分流 | `powershell -File tests\run_popup_route_test.ps1` | `target="_blank"` / `window.open` 的分流：同站留标签、跨站开标签、程序化小窗交回内核 | 27 |
 | 新标签页（单元） | `powershell -File tests\run_newtab_test.ps1` | 页面生成、HTML 转义、危险协议过滤、图标内联、数量上限 | 42 |
 | 打开本地 HTML（端到端） | `powershell -File tests\run_e2e_openfile_test.ps1` | 真实内核：修复前的 DNS 失败 vs 修复后正常渲染 | 5 |
 | 新标签页（端到端） | `powershell -File tests\run_newtab_e2e.ps1` | 真实内核 + 真实 `TabManager`：渲染、图标两条通道、点击桥与越权拒绝 | 18 |
+| 画中画弹窗（端到端） | `powershell -File tests\run_pip_popup_e2e.ps1` | 真实内核：复现修复前「当前页被顶成空白页」、验证修复后页面不受影响且小窗被允许；并探测真实 B 站视频页 | 8 |
 
-运行结果写入 `tests\*_log.txt`。
+运行结果写入 `tests\*_log.txt`。合计 **135** 项用例。
 
 ---
 
