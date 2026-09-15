@@ -134,6 +134,17 @@ namespace LoongBrowser
                 _tabMgr.RefreshNewTabPages();     // 关掉时新标签页会回到空白页
             };
             mTool.DropDownItems.Add(miNewTab);
+            var miPopupTop = new ToolStripMenuItem("小窗默认置顶");
+            miPopupTop.CheckOnClick = true;
+            miPopupTop.Checked = PopupWindow.DefaultAlwaysOnTop;
+            miPopupTop.ToolTipText = "B 站画中画等弹出的小窗是否始终显示在最前面";
+            miPopupTop.Click += delegate(object s, EventArgs e)
+            {
+                var mi = s as ToolStripMenuItem;
+                if (mi == null) return;
+                PopupWindow.DefaultAlwaysOnTop = mi.Checked;
+            };
+            mTool.DropDownItems.Add(miPopupTop);
             mTool.DropDownItems.Add("设为默认浏览器...", null, delegate { SetDefaultBrowser(); });
             mTool.DropDownItems.Add(new ToolStripSeparator());
             mTool.DropDownItems.Add("关于 LoongBrowser", null, delegate { ShowAbout(); });

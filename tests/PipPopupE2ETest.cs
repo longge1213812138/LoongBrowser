@@ -170,9 +170,23 @@ namespace LoongBrowser
             Judge("B3 弹出小窗被内核接受（拿到真正的窗口，而不是 null）", probe == "opened", "实际: " + probe);
             Judge("B4 当前页没有被顶掉", Title(core) == "新标签页", "实际: " + Title(core));
 
+            // 我们自建的小窗会出现在屏幕中央，测试期间先挪走，别挡着用户；随后按站点脚本关闭
+            try
+            {
+                PopupWindow[] ws = PopupWindow.OpenWindows();
+                for (int i = 0; i < ws.Length; i++) ws[i].Location = new Point(-4000, -4000);
+            }
+            catch (Exception) { }
+
             // 关掉测试弹出的窗口，别留在桌面上
             await EvalStr(core, "try{ if(window.__pipWin) window.__pipWin.close(); }catch(e){} 1");
-            await Task.Delay(400);
+            await Task.Delay(800);
+            try
+            {
+                PopupWindow[] left = PopupWindow.OpenWindows();
+                for (int i = 0; i < left.Length; i++) { try { left[i].Close(); } catch (Exception) { } }
+            }
+            catch (Exception) { }
             _sb.AppendLine();
         }
 

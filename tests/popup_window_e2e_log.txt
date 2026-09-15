@@ -1,0 +1,31 @@
+﻿=== 小窗置顶端到端测试（真实 WebView2 + 真实 TabManager）===
+内核版本: 152.0.4191.66
+       * 测试前「小窗默认置顶」= True
+
+-- A. 建窗与默认置顶 --
+       * A0 宿主页已打开: Example Domain
+[PASS] A1 window.open 拿到了窗口（不再是 null）
+[PASS] A2 小窗已由我们自己创建
+       * A3 小窗标题: LoongBrowser 小窗，尺寸: 420×290
+[PASS] A4 小窗默认置顶（始终显示在最前）
+[PASS] A5 小窗尺寸按请求设置（内容区 260 + 工具条 30）
+
+-- B. opener 能往小窗里写内容（B 站小窗的前提）--
+[PASS] B1 opener 可写入并读回小窗文档
+       * B2 小窗地址: about:blank
+
+-- C. 置顶开关可开可关 --
+[PASS] C1 关闭置顶后 TopMost=false
+[PASS] C2 开关状态已记住（DefaultAlwaysOnTop=false）
+[PASS] C3 重新开启置顶后 TopMost=true
+[PASS] C4 开关状态已记住（DefaultAlwaysOnTop=true）
+[PASS] C5 顶部复选框与状态一致
+
+-- D. 站点自己调 window.close() 关闭小窗 --
+       * D0 页面调用 window.close(): called
+[PASS] D1 宿主窗口跟着关闭（没有留下孤儿窗口）
+[PASS] D2 opener 侧窗口已关闭
+       * 已恢复用户原设置「小窗默认置顶」= True
+
+=== 端到端结果：通过 12 项，失败 0 项 ===
+

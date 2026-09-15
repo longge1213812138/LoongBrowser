@@ -80,7 +80,17 @@ public static class FaviconApiDump
             {
                 foreach (var p in ne.GetProperties())
                     Console.WriteLine("  PROP " + p.PropertyType.Name + " " + p.Name);
+                foreach (var m in ne.GetMethods())
+                    if (m.DeclaringType == ne)
+                        Console.WriteLine("  METHOD " + m.ReturnType.Name + " " + m.Name + "(" +
+                            string.Join(", ", Array.ConvertAll(m.GetParameters(),
+                                p => p.ParameterType.Name + " " + p.Name)) + ")");
             }
+            Console.WriteLine();
+            Console.WriteLine("== deferral types ==");
+            foreach (var t in asm.GetExportedTypes())
+                if (t.Name.IndexOf("Deferral", StringComparison.OrdinalIgnoreCase) >= 0)
+                    Console.WriteLine("  TYPE " + t.FullName);
             Console.WriteLine();
 
             Console.WriteLine("== CoreWebView2 members matching Picture/Pip ==");

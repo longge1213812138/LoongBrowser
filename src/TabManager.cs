@@ -152,6 +152,48 @@ namespace LoongBrowser
             NewTabPage.RequestMissingIcons(Bookmarks != null ? Bookmarks.Items : null, OnIconReady);
         }
 
+        /// <summary>
+        /// 程序化弹出的小窗：自建独立窗口承载，再交给发起方（GetDeferral + NewWindow）。
+        /// 内核要先在窗口里初始化完成才能交付，所以用 deferral 推迟本次请求的完成。
+        /// 任何一步失败都退回"让内核自己开原生窗口"，不至于把弹窗彻底挡掉。
+        /// </summary>
+        private async void OpenPopupWindow(CoreWebView2NewWindowRequestedEventArgs e)
+        {
+            CoreWebView2Deferral deferral = null;
+            try { deferral = e.GetDeferral(); } catch (Exception) { }
+            try
+            {
+                if (_env == null) throw new InvalidOperationException("内核环境未就绪");
+
+                var win = new PopupWindow();
+                ApplyWindowFeatures(win, e.WindowFeatures);
+                win.Show();
+                await win.InitAsync(_env);
+                if (win.Core == null) throw new InvalidOperationException("小窗内核初始化失败");
+
+                e.NewWindow = win.Core;
+                e.Handled = true;
+            }
+            catch (Exception)
+            {
+                e.Handled = false;      // 兜底：交回内核按原生弹窗打开
+            }
+            finally
+            {
+                if (deferral != null) { try { deferral.Complete(); } catch (Exception) { } }
+            }
+        }
+
+        /// <summary>按 window.open 请求的尺寸开窗（没有尺寸信息时用 PopupWindow 的默认大小）</summary>
+        private static void ApplyWindowFeatures(PopupWindow win, CoreWebView2WindowFeatures f)
+        {
+            if (win == null || f == null || !f.HasSize) return;
+            int w = (int)f.Width;
+            int h = (int)f.Height;
+            if (w < 160 || h < 120) return;       // 明显不合理的值就别当尺寸用
+            win.SetContentSize(w, h);
+        }
+
         /// <summary>图标刚就绪（后台线程）→ 回 UI 线程刷新新标签页</summary>
         private void OnIconReady()
         {
@@ -209,7 +251,9 @@ namespace LoongBrowser
                         NewTab(e.Uri);
                         break;
                     default:
-                        e.Handled = false;   // 交回内核：opener 需要拿到真正的 window 句柄
+                        // 程序化弹出的小窗（B 站画中画等）：用我们自己的独立窗口承载，
+                        // 这样才有窗口控制权（可置顶）；opener 依旧能拿到真正的 window 句柄
+                        OpenPopupWindow(e);
                         break;
                 }
             };

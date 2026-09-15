@@ -25,6 +25,7 @@
 - 前进 / 后退 / 刷新；多标签页
 - **链接分流**：同站跳转留在当前标签（历史可回溯），跨站链接才新开标签页
 - **右键菜单**：后退 / 前进 / 刷新、「在新标签页中打开链接」、「在新窗口中打开链接」、「复制链接地址」、「在新标签页中打开图片」；输入框场景保留系统默认的复制/粘贴菜单
+- **弹出小窗（含置顶）**：站点用 `window.open` 弹出的小窗（B 站画中画、OAuth 授权窗等）由应用**自建窗口**承载 —— 默认**窗口置顶**（切到其他应用时仍显示在最前），窗口顶部带「窗口置顶」开关可随时开关；主窗口「工具 → 小窗默认置顶」可改默认值并会记住；窗口尺寸按站点请求设置，页面调用 `window.close()` 时窗口自动关闭
 
 ### 新标签页（书签墙）
 
@@ -71,6 +72,7 @@
 | `%APPDATA%\LoongBrowser\bookmarks.json` | 书签 |
 | `%APPDATA%\LoongBrowser\downloads.json` | 下载记录 |
 | `%APPDATA%\LoongBrowser\favicons\` | 网站图标缓存（一个域名一个 PNG，删掉即自动重建） |
+| `%APPDATA%\LoongBrowser\popup.json` | 小窗设置（是否默认置顶） |
 | `%LOCALAPPDATA%\LoongBrowser\WebView2\` | 内核数据（缓存 / Cookie / 会话） |
 
 ---
@@ -108,8 +110,9 @@ powershell -ExecutionPolicy Bypass -File build.ps1
 | 打开本地 HTML（端到端） | `powershell -File tests\run_e2e_openfile_test.ps1` | 真实内核：修复前的 DNS 失败 vs 修复后正常渲染 | 5 |
 | 新标签页（端到端） | `powershell -File tests\run_newtab_e2e.ps1` | 真实内核 + 真实 `TabManager`：渲染、图标两条通道、点击桥与越权拒绝 | 18 |
 | 画中画弹窗（端到端） | `powershell -File tests\run_pip_popup_e2e.ps1` | 真实内核：复现修复前「当前页被顶成空白页」、验证修复后页面不受影响且小窗被允许；并探测真实 B 站视频页 | 8 |
+| 小窗置顶（端到端） | `powershell -File tests\run_popup_window_e2e.ps1` | 真实内核 + 真实 `TabManager`：小窗创建、默认置顶、开关切换与记忆、按请求尺寸、opener 可写入小窗、`window.close()` 联动关闭 | 12 |
 
-运行结果写入 `tests\*_log.txt`。合计 **135** 项用例。
+运行结果写入 `tests\*_log.txt`。合计 **147** 项用例。
 
 ---
 
@@ -159,6 +162,8 @@ tests/                   测试与 API 诊断工具（见上表），以及各�
 | `FaviconCache.EnableRemoteFetch` | `true` | 是否允许联网抓 `/favicon.ico`（关闭后只用已访问站点的图标 + 空白图标） |
 | `FaviconCache.RemoteTimeoutMs` | `6000` | 图标抓取超时 |
 | `FaviconCache.IconSize` | `32` | 图标边长（同时是缓存尺寸） |
+| `PopupWindow.DefaultAlwaysOnTop` | `true` | 弹出小窗是否默认窗口置顶（工具菜单可改，会写入 `popup.json`） |
+| `PopupWindow.BarHeight` | `30` | 小窗顶部工具条高度（置顶开关所在的那一条） |
 
 ---
 
