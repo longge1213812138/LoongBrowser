@@ -1,0 +1,22 @@
+﻿=== 双击打开本地 HTML 端到端测试（真实 WebView2 内核）===
+测试文件: C:\Users\91533\Desktop\浏览器\tests\_out_e2e\tmp\e2e_double_click.html
+
+内核版本: 152.0.4191.66
+
+--- Step1 旧逻辑目标（模拟修复前的双击）---
+URL: https://C:\Users\91533\Desktop\浏览器\tests\_out_e2e\tmp\e2e_double_click.html
+IsSuccess=False  WebErrorStatus=HostNameNotResolved
+[PASS] E1 旧逻辑打开失败（复现用户的故障）
+[PASS] E2 错误类型为主机名无法解析（对应 ERR_NAME_NOT_RESOLVED）
+
+--- Step2 修复后目标 ---
+URL: file:///C:/Users/91533/Desktop/%E6%B5%8F%E8%A7%88%E5%99%A8/tests/_out_e2e/tmp/e2e_double_click.html
+IsSuccess=True  WebErrorStatus=Unknown
+Source=file:///C:/Users/91533/Desktop/%E6%B5%8F%E8%A7%88%E5%99%A8/tests/_out_e2e/tmp/e2e_double_click.html
+[PASS] E3 修复后导航成功
+[PASS] E4 停在本地文件页（未跳到搜索/DNS 失败页）
+DocumentTitle=E2E_OPEN_OK
+[PASS] E5 本地 HTML 内容真的渲染了
+
+=== 端到端结果：通过 5 项，失败 0 项 ===
+

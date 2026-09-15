@@ -11,6 +11,7 @@
 - ⬇️ **下载管理**：自动保存到系统"下载"文件夹并记录；支持打开文件/文件夹、删除记录
 - 🧹 **缓存清理**：缓存 / 历史记录 / Cookie 分项清理（调用 WebView2 官方 API）
 - 🖥️ **设为默认浏览器**：自动完成系统登记，并引导到 Windows 设置完成一键确认
+- 📂 **本地文件**：双击 `.html` / `.htm` 文件、或把文件拖入窗口，直接用浏览器打开（内部规范化为 `file:///` 地址）
 
 ## 安装
 
@@ -28,11 +29,19 @@
 
 无需安装任何开发工具（使用 Windows 自带编译器）：
 
+1. 先把 WebView2 官方 SDK 的 3 个 DLL 放进 `libs\`（仓库中未包含，见下方说明）：
+   `Microsoft.Web.WebView2.Core.dll`、`Microsoft.Web.WebView2.WinForms.dll`、`WebView2Loader.dll`
+   —— 取自 NuGet 包 [`Microsoft.Web.WebView2`](https://www.nuget.org/packages/Microsoft.Web.WebView2)，
+   解压 `.nupkg` 后在 `lib\net45\` 找到前两个，`runtimes\win-x64\native\`（或 `win-x86`）找到 `WebView2Loader.dll`。
+2. 编译：
+
 ```powershell
 powershell -ExecutionPolicy Bypass -File build.ps1
 ```
 
 产物在 `dist\`：`LoongBrowser.exe`（主程序）、`LoongBrowserSetup.exe`（安装器）及 3 个依赖 DLL。
+
+> `libs\`、`dist\` 与 `build_log.txt` 属于构建输入/产物，已在 `.gitignore` 中排除。
 
 ## 技术栈
 

@@ -324,7 +324,7 @@ namespace LoongBrowserSetup
             MinimizeBox = false;
 
             var label = new Label();
-            label.Text = Program.AppTitle + " v1.0\n基于 Chromium 内核 (WebView2)\n\n选择安装位置：";
+            label.Text = Program.AppTitle + " v1.0.1\n基于 Chromium 内核 (WebView2)\n\n选择安装位置：";
             label.Location = new Point(18, 14);
             label.Size = new Size(510, 66);
             label.AutoSize = false;

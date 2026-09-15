@@ -1,0 +1,88 @@
+﻿=== NormalizeUrl 归一化测试 ===
+测试文件: C:\Users\91533\Desktop\浏览器\tests\_out\tmp\double_click.html
+文件存在: True | 已创建并切换工作目录：C:\Users\91533\Desktop\浏览器\tests\_out\tmp
+
+-- A. 核心场景：双击 .html（注册表命令 "exe" "%1" 传入裸路径）--
+[PASS] A1 典型盘符路径
+       输入: C:\Users\91533\Desktop\test.html
+       输出: file:///C:/Users/91533/Desktop/test.html
+[PASS] A2 小写盘符
+       输入: c:\temp\a.html
+       输出: file:///c:/temp/a.html
+[PASS] A3 正斜杠路径
+       输入: C:/Users/91533/a.htm
+       输出: file:///C:/Users/91533/a.htm
+[PASS] A4 路径含空格(转义)
+       输入: C:\My Docs\my page.html
+       输出: file:///C:/My%20Docs/my%20page.html
+[PASS] A5 路径含空格(不得出现裸空格)
+       输入: C:\My Docs\my page.html
+       输出: file:///C:/My%20Docs/my%20page.html
+[PASS] A6 中文路径
+       输入: C:\资料\页面.html
+       输出: file:///C:/%E8%B5%84%E6%96%99/%E9%A1%B5%E9%9D%A2.html
+[PASS] A7 工作区内的真实文件
+       输入: C:\Users\91533\Desktop\浏览器\tests\_out\tmp\double_click.html
+       输出: file:///C:/Users/91533/Desktop/%E6%B5%8F%E8%A7%88%E5%99%A8/tests/_out/tmp/double_click.html
+[PASS] A8 相对路径(文件存在)
+       输入: double_click.html
+       输出: file:///C:/Users/91533/Desktop/%E6%B5%8F%E8%A7%88%E5%99%A8/tests/_out/tmp/double_click.html
+[PASS] A9 带残留引号
+       输入: "C:\Users\a.html"
+       输出: file:///C:/Users/a.html
+[PASS] A10 UNC 网络路径
+       输入: \\server\share\a.html
+       输出: file://server/share/a.html
+[PASS] A11 目录也能打开
+       输入: C:\Users
+       输出: file:///C:/Users
+
+-- B. 回归：原有行为不能被破坏 --
+[PASS] B1 https 链接
+       输入: https://example.com/a.html
+       输出: https://example.com/a.html
+[PASS] B2 http 链接
+       输入: http://example.com/x
+       输出: http://example.com/x
+[PASS] B3 域名补协议
+       输入: example.com
+       输出: https://example.com
+[PASS] B4 带路径的域名
+       输入: www.qq.com/news
+       输出: https://www.qq.com/news
+[PASS] B5 无点号 → 搜索
+       输入: hello
+       输出: https://www.bing.com/search?q=hello
+[PASS] B6 含空格 → 搜索
+       输入: hello world
+       输出: https://www.bing.com/search?q=hello%20world
+[PASS] B7 中文搜索
+       输入: 天气预报
+       输出: https://www.bing.com/search?q=%E5%A4%A9%E6%B0%94%E9%A2%84%E6%8A%A5
+[PASS] B8 about:
+       输入: about:blank
+       输出: about:blank
+[PASS] B9 file: 原样透传
+       输入: file:///C:/x.html
+       输出: file:///C:/x.html
+[PASS] B10 localhost 原样
+       输入: localhost:8080
+       输出: localhost:8080
+[PASS] B11 空输入
+       输入: 
+       输出: about:blank
+[PASS] B12 已存在的非路径输入不受影响
+       输入: www.baidu.com
+       输出: https://www.baidu.com
+
+-- C. 机理复现：旧代码为何报 ERR_NAME_NOT_RESOLVED --
+       * C1 旧代码拼出的导航目标: https://C:\Users\91533\Desktop\test.html
+       * C1 该 URL 的"主机名"段: <C:>
+[PASS] C1 盘符 C 被当成主机名（= 报错里的那个 c）
+       * C1 .NET 解析: UriFormatException：无效的 URI: 指定的端口无效。（证实 C: 被当作 host:port）
+[PASS] C2 修复后同一输入
+       输入: C:\Users\91533\Desktop\test.html
+       输出: file:///C:/Users/91533/Desktop/test.html
+
+=== 结果：通过 25 项，失败 0 项 ===
+

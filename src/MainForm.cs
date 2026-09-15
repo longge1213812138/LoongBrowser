@@ -193,17 +193,61 @@ namespace LoongBrowser
             _tabMgr.NavigateCurrent(NormalizeUrl(t));
         }
 
-        /// <summary>地址栏输入归一化：补全协议；非网址则作为搜索词（空主页设计下也保持可用）</summary>
+        /// <summary>
+        /// 输入归一化：补全协议；本地文件/文件夹路径转成 file:// URL；非网址则作为搜索词。
+        /// 关键：必须先识别本地路径。双击 .html 文件时，Windows 按注册表命令
+        /// "LoongBrowser.exe" "%1" 把裸路径（如 C:\dir\a.html）作为命令行参数传进来；
+        /// 若按"含点号的网址"处理，会拼成 https://C:\dir\a.html，内核把盘符 C 当成主机名
+        /// 去做 DNS 解析，于是报 ERR_NAME_NOT_RESOLVED（找不到 c 的服务器 IP 地址）。
+        /// </summary>
         public static string NormalizeUrl(string input)
         {
+            if (input == null) return "about:blank";
+            input = input.Trim();
+            if (input.Length == 0) return "about:blank";
+
+            // 注册表 %1 展开后可能残留成对引号
+            if (input.Length >= 2 && input[0] == '"' && input[input.Length - 1] == '"')
+                input = input.Substring(1, input.Length - 2).Trim();
+
             if (input.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
                 input.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ||
                 input.StartsWith("about:", StringComparison.OrdinalIgnoreCase) ||
-                input.StartsWith("file://", StringComparison.OrdinalIgnoreCase) ||
+                input.StartsWith("file:", StringComparison.OrdinalIgnoreCase) ||
                 input.StartsWith("localhost", StringComparison.OrdinalIgnoreCase))
                 return input;
+
+            // 本地路径优先于"含点号即网址"的启发式判断
+            if (IsLocalPath(input) || File.Exists(input))
+                return PathToFileUrl(input);
+
             if (input.Contains(".") && !input.Contains(" ")) return "https://" + input;
             return "https://www.bing.com/search?q=" + Uri.EscapeDataString(input);
+        }
+
+        /// <summary>是否 Windows 本地路径：盘符路径 C:\ 或 C:/ ，或 UNC 路径 \\server\share</summary>
+        public static bool IsLocalPath(string s)
+        {
+            if (s == null || s.Length < 2) return false;
+            if (char.IsLetter(s[0]) && s[1] == ':' && (s.Length == 2 || s[2] == '\\' || s[2] == '/')) return true;
+            if (s[0] == '\\' && s[1] == '\\') return true;
+            return false;
+        }
+
+        /// <summary>本地路径 → 规范的 file:/// URL（正确转义空格、中文、# 等字符）</summary>
+        public static string PathToFileUrl(string path)
+        {
+            try
+            {
+                return new Uri(Path.GetFullPath(path)).AbsoluteUri;
+            }
+            catch (Exception)
+            {
+                string p = path.Replace('\\', '/');
+                if (p.StartsWith("//")) return new Uri("file:" + p).AbsoluteUri;      // UNC：\\srv\share → file://srv/share
+                if (p.StartsWith("/")) return new Uri("file://" + p).AbsoluteUri;
+                return new Uri("file:///" + p).AbsoluteUri;                           // C:/... → file:///C:/...
+            }
         }
 
         private void AddBookmark()
@@ -247,7 +291,7 @@ namespace LoongBrowser
         {
             string ver = _tabMgr.ActiveBrowserVersion();
             MessageBox.Show(
-                "LoongBrowser v1.0\n" +
+                "LoongBrowser v1.0.1\n" +
                 "极简 Chromium 内核浏览器（WebView2）\n" +
                 (ver.Length > 0 ? "内核版本：" + ver + "\n" : "") +
                 "数据目录：%APPDATA%\\LoongBrowser",

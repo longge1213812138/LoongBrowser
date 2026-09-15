@@ -41,8 +41,14 @@ namespace LoongBrowser
         public static void Main(string[] args)
         {
             string url = null;
-            if (args != null && args.Length > 0 && args[0].Trim().Length > 0)
-                url = MainForm.NormalizeUrl(args[0]);
+            if (args != null && args.Length > 0)
+            {
+                // 双击"默认程序打开"时，命令行形如 "C:\dir\my page.html"。
+                // 若注册表命令里的 %1 没加引号，含空格的路径会被拆成多个参数，这里重新拼回完整路径。
+                string raw = (args.Length == 1) ? args[0] : string.Join(" ", args);
+                raw = raw.Trim();
+                if (raw.Length > 0) url = MainForm.NormalizeUrl(raw);
+            }
 
             bool createdNew;
             _mutex = new Mutex(true, "LoongBrowser_SingleInstance_Mutex", out createdNew);

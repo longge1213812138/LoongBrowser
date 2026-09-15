@@ -11,6 +11,7 @@ namespace LoongBrowser
     public static class DefaultBrowser
     {
         private const string ProgId = "LoongBrowser.URL";
+        private const string HtmlProgId = "LoongBrowser.html";
         private const string ClientKey = @"Software\Clients\StartMenuInternet\LoongBrowser";
 
         /// <summary>写入注册表，将 LoongBrowser 登记为可选浏览器</summary>
@@ -27,7 +28,26 @@ namespace LoongBrowser
                     i.SetValue("", exePath + ",0");
             }
 
-            // 2) StartMenuInternet：登记为"已安装的浏览器"
+            // 2) HTML 文件关联：注册 ProgId 并加入 .html/.htm 的"打开方式"候选。
+            //    注意：Windows 不允许程序自行抢占默认程序，这里只做"合法登记"，
+            //    用户需在"打开方式 → 选择其他应用 → 始终"里确认一次。
+            try
+            {
+                using (var k = Registry.CurrentUser.CreateSubKey(@"Software\Classes\" + HtmlProgId))
+                {
+                    k.SetValue("", "LoongBrowser HTML Document");
+                    k.SetValue("FriendlyTypeName", "LoongBrowser HTML Document");
+                    using (var c = k.CreateSubKey(@"shell\open\command"))
+                        c.SetValue("", "\"" + exePath + "\" \"%1\"");
+                    using (var i = k.CreateSubKey("DefaultIcon"))
+                        i.SetValue("", exePath + ",0");
+                }
+                AddOpenWith(".html");
+                AddOpenWith(".htm");
+            }
+            catch (Exception) { }
+
+            // 3) StartMenuInternet：登记为"已安装的浏览器"
             using (var k = Registry.CurrentUser.CreateSubKey(ClientKey))
             {
                 k.SetValue("", "LoongBrowser");
@@ -49,9 +69,26 @@ namespace LoongBrowser
                 }
             }
 
-            // 3) RegisteredApplications：让系统"默认应用"设置页列出 LoongBrowser
+            // 4) RegisteredApplications：让系统"默认应用"设置页列出 LoongBrowser
             using (var k = Registry.CurrentUser.CreateSubKey(@"Software\RegisteredApplications"))
                 k.SetValue("LoongBrowser", ClientKey + @"\Capabilities");
+        }
+
+        /// <summary>把 ProgId 挂到扩展名的"打开方式"候选列表（OpenWithProgids，不改变系统默认）</summary>
+        private static void AddOpenWith(string ext)
+        {
+            using (var k = Registry.CurrentUser.CreateSubKey(@"Software\Classes\" + ext + @"\OpenWithProgids"))
+                k.SetValue(HtmlProgId, new byte[0], RegistryValueKind.None);
+        }
+
+        private static void RemoveOpenWith(string ext)
+        {
+            try
+            {
+                using (var k = Registry.CurrentUser.OpenSubKey(@"Software\Classes\" + ext + @"\OpenWithProgids", true))
+                    if (k != null) k.DeleteValue(HtmlProgId, false);
+            }
+            catch (Exception) { }
         }
 
         /// <summary>撤销全部注册表登记（卸载时用）</summary>
@@ -59,6 +96,9 @@ namespace LoongBrowser
         {
             try { Registry.CurrentUser.DeleteSubKeyTree(@"Software\Clients\StartMenuInternet\LoongBrowser", false); } catch (Exception) { }
             try { Registry.CurrentUser.DeleteSubKeyTree(@"Software\Classes\LoongBrowser.URL", false); } catch (Exception) { }
+            try { Registry.CurrentUser.DeleteSubKeyTree(@"Software\Classes\LoongBrowser.html", false); } catch (Exception) { }
+            RemoveOpenWith(".html");
+            RemoveOpenWith(".htm");
             try
             {
                 using (var k = Registry.CurrentUser.CreateSubKey(@"Software\RegisteredApplications"))
