@@ -1,0 +1,6 @@
+# Binaries must never be mangled by core.autocrlf (set to true in this repo).
+# Marking them as binary keeps line endings byte-exact and diffs meaningful.
+*.dll binary
+*.exe binary
+*.png binary
+*.ico binary

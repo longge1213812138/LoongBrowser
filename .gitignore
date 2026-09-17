@@ -1,9 +1,12 @@
 # Build artifacts
 dist/
 build_log.txt
-libs/
 .workbuddy/
 *.zip
+
+# NOTE: libs/ is NOT ignored on purpose — it holds the WebView2 SDK assemblies
+# referenced by build.ps1. Keeping them tracked means a fresh clone can build
+# without a NuGet restore step (~890 KB total).
 
 # extracted package cache
 temp/
