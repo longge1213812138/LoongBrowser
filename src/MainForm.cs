@@ -71,6 +71,9 @@ namespace LoongBrowser
             // 应用初始暗色模式设置
             DarkModeManager.ApplyToForm(this);
             ApplyDarkModeToToolbar();
+
+            // 初始化全屏管理器
+            FullscreenManager.Init(this, _menu, _toolbar, _tabs);
         }
 
         private long _lastUrlTick;

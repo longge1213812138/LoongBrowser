@@ -157,6 +157,9 @@ namespace LoongBrowser
             }
 
             Wire(tab);
+
+            // 绑定全屏事件
+            FullscreenManager.BindWebView(view);
             if (tab.PendingUrl != null)
             {
                 string u = tab.PendingUrl;
