@@ -220,7 +220,7 @@ namespace LoongBrowser
             _addressBox = new ToolStripTextBox();
             _addressBox.BorderStyle = BorderStyle.FixedSingle;
             _addressBox.AutoSize = false;
-            _addressBox.Width = 560;
+            _addressBox.Width = 520;
             _addressBox.KeyPress += delegate(object s, KeyPressEventArgs e)
             {
                 if (e.KeyChar == (char)13)
@@ -228,6 +228,34 @@ namespace LoongBrowser
                     e.Handled = true;
                     NavigateFromAddress();
                 }
+            };
+
+            var btnCopy = new ToolStripButton("复制");
+            btnCopy.ToolTipText = "复制地址栏内容到剪贴板";
+            btnCopy.Click += delegate
+            {
+                string text = _addressBox.Text;
+                if (!string.IsNullOrEmpty(text))
+                {
+                    try { Clipboard.SetText(text); } catch (Exception) { }
+                }
+            };
+
+            var btnPaste = new ToolStripButton("粘贴");
+            btnPaste.ToolTipText = "从剪贴板粘贴到地址栏";
+            btnPaste.Click += delegate
+            {
+                try
+                {
+                    string clip = Clipboard.GetText();
+                    if (!string.IsNullOrEmpty(clip))
+                    {
+                        _addressBox.Text = clip;
+                        _addressBox.Focus();
+                        _addressBox.SelectAll();
+                    }
+                }
+                catch (Exception) { }
             };
 
             var btnNewTab = new ToolStripButton("＋新标签");
@@ -244,6 +272,8 @@ namespace LoongBrowser
             _toolbar.Items.Add(btnRefresh);
             _toolbar.Items.Add(new ToolStripSeparator());
             _toolbar.Items.Add(_addressBox);
+            _toolbar.Items.Add(btnCopy);
+            _toolbar.Items.Add(btnPaste);
             _toolbar.Items.Add(new ToolStripSeparator());
             _toolbar.Items.Add(btnStar);
             _toolbar.Items.Add(new ToolStripSeparator());

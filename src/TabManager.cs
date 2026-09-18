@@ -20,6 +20,11 @@ namespace LoongBrowser
     public class TabManager
     {
         private readonly TabControl _tabs;
+
+        // ---------- 右键菜单延迟执行：WebView2 回调中无法直接操作标签页，
+        // 用静态字段存待执行的 URL，由定时器在 UI 线程上轮询执行 ----------
+        private static string _pendingNewTabUrl;
+        private static Timer _pendingTimer;
         // 进程内共享同一个内核环境：多窗口（右键"在新窗口中打开"）不会争抢用户数据目录
         private static CoreWebView2Environment _env;
         private readonly List<TabInfo> _list = new List<TabInfo>();
@@ -56,6 +61,23 @@ namespace LoongBrowser
 
             // 订阅暗色模式变化事件
             DarkModeManager.DarkModeChanged += OnDarkModeChanged;
+
+            // 启动右键菜单延迟执行定时器
+            if (_pendingTimer == null)
+            {
+                _pendingTimer = new Timer();
+                _pendingTimer.Interval = 50;
+                _pendingTimer.Tick += delegate
+                {
+                    string url = _pendingNewTabUrl;
+                    if (!string.IsNullOrEmpty(url))
+                    {
+                        _pendingNewTabUrl = null;
+                        NewTab(url);
+                    }
+                };
+                _pendingTimer.Start();
+            }
         }
 
         /// <summary>暗色模式切换时，刷新所有标签页的网页样式</summary>
@@ -375,6 +397,8 @@ namespace LoongBrowser
 
             bool isLink = target != null && target.HasLinkUri && !string.IsNullOrEmpty(target.LinkUri);
             bool isImage = target != null && target.HasSourceUri && !string.IsNullOrEmpty(target.SourceUri);
+            string selectionText = (target != null) ? target.SelectionText : null;
+            bool hasSelection = !string.IsNullOrEmpty(selectionText);
             var items = e.MenuItems;
 
             // 常规导航项
@@ -387,7 +411,7 @@ namespace LoongBrowser
             if (isLink)
             {
                 items.Add(CreateSeparator());
-                items.Add(CreateItem("在新标签页中打开链接", delegate { NewTab(target.LinkUri); }));
+                items.Add(CreateItem("在新标签页中打开链接", delegate { ScheduleNewTab(target.LinkUri); }));
                 items.Add(CreateItem("在新窗口中打开链接", delegate { Program.OpenNewWindow(MainForm.NormalizeUrl(target.LinkUri)); }));
                 items.Add(CreateItem("复制链接地址", delegate
                 {
@@ -398,8 +422,34 @@ namespace LoongBrowser
             if (isImage)
             {
                 items.Add(CreateSeparator());
-                items.Add(CreateItem("在新标签页中打开图片", delegate { NewTab(target.SourceUri); }));
+                items.Add(CreateItem("在新标签页中打开图片", delegate { ScheduleNewTab(target.SourceUri); }));
+                items.Add(CreateItem("复制图片地址", delegate
+                {
+                    try { Clipboard.SetText(target.SourceUri); } catch (Exception) { }
+                }));
             }
+
+            // 选中文字时：搜索
+            if (hasSelection)
+            {
+                items.Add(CreateSeparator());
+                string searchText = selectionText.Length > 50 ? selectionText.Substring(0, 50) + "..." : selectionText;
+                items.Add(CreateItem("在新标签页中搜索 " + searchText, delegate
+                {
+                    ScheduleNewTab("https://www.bing.com/search?q=" + Uri.EscapeDataString(selectionText));
+                }));
+            }
+
+            // 当前页面信息
+            items.Add(CreateSeparator());
+            items.Add(CreateItem("在新标签页中打开", delegate
+            {
+                try { ScheduleNewTab(view.CoreWebView2.Source); } catch (Exception) { }
+            }));
+            items.Add(CreateItem("复制当前页面地址", delegate
+            {
+                try { Clipboard.SetText(view.CoreWebView2.Source); } catch (Exception) { }
+            }));
 
             if (items.Count == 0) return; // 无可显示项时保留默认菜单
             e.Handled = true;
@@ -410,9 +460,17 @@ namespace LoongBrowser
             var item = _env.CreateContextMenuItem(title, null, CoreWebView2ContextMenuItemKind.Command);
             item.CustomItemSelected += delegate(object s2, object e2)
             {
+                // WebView2 回调上下文中无法直接操作标签页（NewTab 等会被内部状态覆盖），
+                // 所以把待执行的 URL 存到静态字段，由定时器在 UI 线程上轮询执行
                 try { action(); } catch (Exception) { }
             };
             return item;
+        }
+
+        /// <summary>设置待执行的新标签页 URL（由右键菜单回调调用，定时器会轮询执行）</summary>
+        private static void ScheduleNewTab(string url)
+        {
+            _pendingNewTabUrl = url;
         }
 
         private CoreWebView2ContextMenuItem CreateSeparator()
