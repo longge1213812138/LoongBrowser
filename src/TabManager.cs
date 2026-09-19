@@ -429,7 +429,7 @@ namespace LoongBrowser
                 }));
             }
 
-            // 选中文字时：搜索
+            // 选中文字时：搜索和翻译
             if (hasSelection)
             {
                 items.Add(CreateSeparator());
@@ -437,6 +437,10 @@ namespace LoongBrowser
                 items.Add(CreateItem("在新标签页中搜索 " + searchText, delegate
                 {
                     ScheduleNewTab("https://www.bing.com/search?q=" + Uri.EscapeDataString(selectionText));
+                }));
+                items.Add(CreateItem("翻译选中文字", delegate
+                {
+                    TranslateText(selectionText);
                 }));
             }
 
@@ -449,6 +453,12 @@ namespace LoongBrowser
             items.Add(CreateItem("复制当前页面地址", delegate
             {
                 try { Clipboard.SetText(view.CoreWebView2.Source); } catch (Exception) { }
+            }));
+            
+            // 翻译当前页面
+            items.Add(CreateItem("翻译当前页面", delegate
+            {
+                TranslateCurrentPage(view);
             }));
 
             if (items.Count == 0) return; // 无可显示项时保留默认菜单
@@ -601,6 +611,83 @@ namespace LoongBrowser
             if (dr == DialogResult.Yes)
             {
                 try { Process.Start("https://go.microsoft.com/fwlink/p/?LinkId=2124703"); } catch (Exception) { }
+            }
+        }
+
+        // ---------- 翻译功能 ----------
+
+        /// <summary>翻译选中的文字</summary>
+        private void TranslateText(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                MessageBox.Show("没有选中任何文字。", "提示");
+                return;
+            }
+
+            // 显示翻译对话框
+            using (var dlg = new TranslationDialog(text))
+            {
+                dlg.ShowDialog();
+            }
+        }
+
+        /// <summary>翻译当前页面</summary>
+        private async void TranslateCurrentPage(WebView2 view)
+        {
+            if (view == null || view.CoreWebView2 == null)
+            {
+                MessageBox.Show("当前没有可翻译的页面。", "提示");
+                return;
+            }
+
+            if (!TranslationService.IsConfigured)
+            {
+                var dr = MessageBox.Show(
+                    "使用翻译功能需要配置百度翻译 API 密钥。\n\n是否现在配置？",
+                    "翻译配置",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Question);
+                if (dr == DialogResult.Yes)
+                {
+                    using (var dlg = new TranslationConfigDialog())
+                    {
+                        dlg.ShowDialog();
+                    }
+                }
+                return;
+            }
+
+            // 获取页面文本内容（通过 JavaScript）
+            string pageText = "";
+            try
+            {
+                // 提取页面正文文本，限制长度
+                string script = @"
+                    (function() {
+                        var text = document.body.innerText || '';
+                        if (text.length > 5000) text = text.substring(0, 5000) + '...';
+                        return text;
+                    })()";
+                var result = await view.CoreWebView2.ExecuteScriptAsync(script);
+                if (result != null && result.Length >= 2)
+                {
+                    var serializer = new System.Web.Script.Serialization.JavaScriptSerializer();
+                    pageText = serializer.Deserialize<string>(result) ?? "";
+                }
+            }
+            catch (Exception) { }
+
+            if (string.IsNullOrWhiteSpace(pageText))
+            {
+                MessageBox.Show("无法获取页面文本内容。", "提示");
+                return;
+            }
+
+            // 显示翻译对话框
+            using (var dlg = new TranslationDialog(pageText))
+            {
+                dlg.ShowDialog();
             }
         }
     }

@@ -29,6 +29,9 @@ namespace LoongBrowser
             _bookmarks = new BookmarkStore();
             _downloads = new DownloadStore();
             _history = new HistoryStore();
+            
+            // 加载翻译配置
+            TranslationService.LoadConfig();
 
             BuildMenu();
             BuildToolbar();
@@ -166,6 +169,11 @@ namespace LoongBrowser
             };
             mTool.DropDownItems.Add(miPopupTop);
             mTool.DropDownItems.Add(new ToolStripSeparator());
+            mTool.DropDownItems.Add(new ToolStripSeparator());
+            mTool.DropDownItems.Add("翻译选中文字", null, delegate { TranslateSelectedText(); });
+            mTool.DropDownItems.Add("翻译当前页面", null, delegate { TranslateCurrentPage(); });
+            mTool.DropDownItems.Add("翻译 API 配置...", null, delegate { ShowTranslationConfig(); });
+            
             var miDarkMode = new ToolStripMenuItem("暗色模式");
             miDarkMode.CheckOnClick = true;
             miDarkMode.Checked = DarkModeManager.IsEnabled;
@@ -267,6 +275,10 @@ namespace LoongBrowser
             var btnStar = new ToolStripButton("☆ 收藏");
             btnStar.Click += delegate { AddBookmark(); };
 
+            var btnTranslate = new ToolStripButton("翻译");
+            btnTranslate.ToolTipText = "翻译选中文字或当前页面";
+            btnTranslate.Click += delegate { TranslateSelectedText(); };
+
             _toolbar.Items.Add(btnBack);
             _toolbar.Items.Add(btnForward);
             _toolbar.Items.Add(btnRefresh);
@@ -276,6 +288,7 @@ namespace LoongBrowser
             _toolbar.Items.Add(btnPaste);
             _toolbar.Items.Add(new ToolStripSeparator());
             _toolbar.Items.Add(btnStar);
+            _toolbar.Items.Add(btnTranslate);
             _toolbar.Items.Add(new ToolStripSeparator());
             _toolbar.Items.Add(btnNewTab);
             _toolbar.Items.Add(btnCloseTab);
@@ -407,6 +420,129 @@ namespace LoongBrowser
                 (ver.Length > 0 ? "内核版本：" + ver + "\n" : "") +
                 "数据目录：%APPDATA%\\LoongBrowser",
                 "关于 LoongBrowser");
+        }
+
+        // ---------- 翻译功能 ----------
+
+        /// <summary>翻译选中文字</summary>
+        private void TranslateSelectedText()
+        {
+            var core = _tabMgr.ActiveCore();
+            if (core == null)
+            {
+                MessageBox.Show("当前没有可翻译的页面。", "提示");
+                return;
+            }
+
+            // 尝试获取选中的文字
+            string selectedText = "";
+            try
+            {
+                // 通过 JavaScript 获取选中文本
+                var task = core.ExecuteScriptAsync("window.getSelection().toString()");
+                task.Wait(1000);
+                if (task.IsCompleted)
+                {
+                    string result = task.Result;
+                    // 去掉 JSON 引号
+                    if (result != null && result.Length >= 2 && result[0] == '"' && result[result.Length - 1] == '"')
+                    {
+                        var serializer = new System.Web.Script.Serialization.JavaScriptSerializer();
+                        selectedText = serializer.Deserialize<string>(result) ?? "";
+                    }
+                }
+            }
+            catch (Exception) { }
+
+            if (string.IsNullOrWhiteSpace(selectedText))
+            {
+                // 没有选中文字，提示用户
+                var dr = MessageBox.Show(
+                    "没有选中任何文字。\n\n是否要翻译整个页面？",
+                    "翻译",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Question);
+                if (dr == DialogResult.Yes)
+                {
+                    TranslateCurrentPage();
+                }
+                return;
+            }
+
+            // 显示翻译对话框
+            using (var dlg = new TranslationDialog(selectedText))
+            {
+                dlg.ShowDialog(this);
+            }
+        }
+
+        /// <summary>翻译当前页面</summary>
+        private async void TranslateCurrentPage()
+        {
+            var core = _tabMgr.ActiveCore();
+            if (core == null)
+            {
+                MessageBox.Show("当前没有可翻译的页面。", "提示");
+                return;
+            }
+
+            if (!TranslationService.IsConfigured)
+            {
+                var dr = MessageBox.Show(
+                    "使用翻译功能需要配置百度翻译 API 密钥。\n\n是否现在配置？",
+                    "翻译配置",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Question);
+                if (dr == DialogResult.Yes)
+                {
+                    ShowTranslationConfig();
+                }
+                return;
+            }
+
+            // 获取页面标题
+            string title = core.DocumentTitle ?? "";
+            
+            // 获取页面文本内容（通过 JavaScript）
+            string pageText = "";
+            try
+            {
+                // 提取页面正文文本，限制长度
+                string script = @"
+                    (function() {
+                        var text = document.body.innerText || '';
+                        if (text.length > 5000) text = text.substring(0, 5000) + '...';
+                        return text;
+                    })()";
+                var result = await core.ExecuteScriptAsync(script);
+                if (result != null && result.Length >= 2)
+                {
+                    var serializer = new System.Web.Script.Serialization.JavaScriptSerializer();
+                    pageText = serializer.Deserialize<string>(result) ?? "";
+                }
+            }
+            catch (Exception) { }
+
+            if (string.IsNullOrWhiteSpace(pageText))
+            {
+                MessageBox.Show("无法获取页面文本内容。", "提示");
+                return;
+            }
+
+            // 显示翻译对话框
+            using (var dlg = new TranslationDialog(pageText))
+            {
+                dlg.ShowDialog(this);
+            }
+        }
+
+        /// <summary>显示翻译 API 配置</summary>
+        private void ShowTranslationConfig()
+        {
+            using (var dlg = new TranslationConfigDialog())
+            {
+                dlg.ShowDialog(this);
+            }
         }
 
         // ---------- 标签联动 ----------
