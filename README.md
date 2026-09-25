@@ -1,16 +1,16 @@
 # LoongBrowser
 
-极简 Windows 桌面浏览器：**WebView2（Chromium 内核）+ C# WinForms**，单语言实现，零第三方运行时依赖，编译只需要 Windows 自带工具链。
+极简 Windows 桌面浏览器：**WebView2（Chromium 内核）+ C# WinForms**，单语言实现，零第三方运行时依赖，编译无需安装 Visual Studio / SDK。
 
 ```
-主程序 ~54 KB · 依赖仅 WebView2 官方 SDK 3 个 DLL（约 880 KB） · 无需 Visual Studio / NuGet / 打包工具
+主程序 ~104 KB · 依赖仅 WebView2 官方 SDK 3 个 DLL（约 880 KB） · 首次构建自动下载 Roslyn 编译器（约 100 KB），无需手工安装工具链
 ```
 
 ---
 
 ## 亮点
 
-- **零依赖包袱** —— 只用系统自带的 .NET Framework 与 WebView2 运行时；编译调用 Windows 自带的 `csc.exe`，不需要 Visual Studio、不需要安装 SDK
+- **零依赖包袱** —— 只用系统自带的 .NET Framework 与 WebView2 运行时；编译由 `build.ps1` 首次自动引导 Roslyn 编译器（下载到 `tools\roslyn\`，不进仓库），失败时回退 Windows 自带的 `csc.exe`；不需要 Visual Studio、不需要安装 SDK
 - **单实例 + 真·多窗口** —— 重复启动会把地址转发给已开窗口（适合当默认浏览器）；右键可在进程内开新窗口，共享同一个内核环境，不争抢用户数据目录
 - **新标签页 = 书签墙** —— 新标签页直接展示全部书签，每个书签带网站图标
 - **本地文件直开** —— 双击 `.html` 文件（设为默认打开方式后），或把文件拖进窗口
@@ -90,7 +90,7 @@
 
 ## 从源码构建
 
-只依赖 Windows 自带工具链，无需安装任何开发环境：
+无需安装任何开发环境（Visual Studio / SDK 都不需要）：
 
 1. 把 WebView2 官方 SDK 的 3 个 DLL 放进 `libs\`（仓库不含二进制，需自行获取一次）：
    `Microsoft.Web.WebView2.Core.dll`、`Microsoft.Web.WebView2.WinForms.dll`、`WebView2Loader.dll`
@@ -103,6 +103,8 @@ powershell -ExecutionPolicy Bypass -File build.ps1
 ```
 
 产物在 `dist\`（主程序 + 安装器 + 3 个依赖 DLL），日志见 `build_log.txt`。
+
+**编译器说明**：`build.ps1` 首次运行时自动从 NuGet 拉取 Roslyn 编译器（`microsoft.net.compilers.toolset` 4.8.0）到 `tools\roslyn\` 并以此编译（支持现代 C# 语法，如字符串插值）。**离线环境**会回退到 Windows 自带的 legacy `csc.exe`（仅支持 C# 5）——若代码已使用插值语法，离线构建会失败；联网跑一次即可补齐 Roslyn。
 
 > `libs\`、`dist\`、`build_log.txt`、`temp\`、`tests\_out*\` 属于构建输入/产物，已在 `.gitignore` 中排除。
 
@@ -133,7 +135,7 @@ powershell -ExecutionPolicy Bypass -File build.ps1
 ## 项目结构
 
 ```
-build.ps1                一键编译：主程序 + 安装器 + 拷贝依赖到 dist\
+build.ps1                一键编译：主程序 + 安装器 + 拷贝依赖到 dist\（首次自动 bootstrap Roslyn 到 tools\roslyn\）
 src/
   Program.cs             入口：单实例互斥、命令行 URL 解析、进程内多窗口管理
   MainForm.cs            主窗口：菜单 / 工具栏 / 地址栏 / 标签容器，URL 归一化
@@ -158,7 +160,7 @@ tests/                   测试与 API 诊断工具（见上表），以及各�
 |---|---|
 | 内核 | Microsoft Edge WebView2（Chromium），使用系统自带运行时 |
 | 框架 | C# WinForms（.NET Framework，系统自带） |
-| 编译 | Windows 自带 `csc.exe`，`/codepage:65001`，无需 Visual Studio |
+| 编译 | 首次构建自动 bootstrap Roslyn（`tools\roslyn\`，不进仓库，支持现代 C#）；离线回退 Windows 自带 legacy `csc.exe`（仅 C# 5），`/codepage:65001`，无需 Visual Studio |
 | 打包 | 自研 C# 安装器，无第三方打包工具 |
 | 依赖 | WebView2 官方 SDK 3 个 DLL（Core / WinForms / Loader），约 880 KB |
 
