@@ -280,6 +280,15 @@ tr:nth-child(odd) {
             {
                 item.BackColor = dark ? ToolStripBackColor : SystemColors.Control;
                 item.ForeColor = dark ? ControlForeColor : SystemColors.ControlText;
+
+                // 工具栏上的下拉按钮（如缩放档位列表）：下拉面板与其内部项一并跟着变色
+                ToolStripDropDownItem dropDown = item as ToolStripDropDownItem;
+                if (dropDown != null && dropDown.HasDropDownItems)
+                {
+                    dropDown.DropDown.BackColor = dark ? MenuBackColor : SystemColors.Control;
+                    dropDown.DropDown.ForeColor = dark ? MenuForeColor : SystemColors.ControlText;
+                    ApplyToToolStripItems(dropDown.DropDownItems, dark);
+                }
             }
         }
 

@@ -116,6 +116,9 @@ namespace LoongBrowser
             await _view.EnsureCoreWebView2Async(env);
             try
             {
+                // 小窗沿用当前会话的缩放比例（与主窗口标签保持一致）
+                ZoomManager.Apply(_view, ZoomManager.SessionDefault);
+
                 // 页面自己调用 window.close()（站点小窗的关闭按钮）时，把宿主窗口一起关掉，
                 // 否则会留下一个空白孤儿窗口
                 _view.CoreWebView2.WindowCloseRequested += delegate

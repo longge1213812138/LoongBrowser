@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Drawing;
 using System.Windows.Forms;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
@@ -130,6 +131,74 @@ namespace LoongBrowser
             return "";
         }
 
+        // ---------- 网页缩放（50% ~ 200%） ----------
+
+        /// <summary>缩放比例发生变化（菜单/工具栏/滚轮任何一条路径改了缩放都会触发）</summary>
+        public event Action ZoomChanged;
+
+        /// <summary>当前标签的缩放比例；内核未就绪时返回会话默认值</summary>
+        public double ActiveZoom()
+        {
+            return ZoomManager.FactorOf(ActiveView());
+        }
+
+        /// <summary>设置当前标签的缩放比例（越界自动收进 50%~200%，并同步会话默认值）</summary>
+        public void SetZoom(double factor)
+        {
+            SetZoom(Current, factor);
+        }
+
+        /// <summary>设置指定标签的缩放比例</summary>
+        public void SetZoom(TabInfo tab, double factor)
+        {
+            if (tab == null || tab.View == null) return;
+            if (tab.View.CoreWebView2 == null) return;   // 内核还没就绪：等就绪后由 NewTab 套用会话默认值
+
+            double value = ZoomManager.Round(factor);
+            ZoomManager.Apply(tab.View, value);
+            ZoomManager.SessionDefault = value;      // 新标签页 / 弹出小窗沿用这次的选择
+
+            if (tab == Current && ZoomChanged != null) ZoomChanged();
+        }
+
+        /// <summary>当前标签放大一级</summary>
+        public void ZoomIn()
+        {
+            SetZoom(Current, ZoomManager.Up(ActiveZoom()));
+        }
+
+        /// <summary>当前标签缩小一级</summary>
+        public void ZoomOut()
+        {
+            SetZoom(Current, ZoomManager.Down(ActiveZoom()));
+        }
+
+        /// <summary>当前标签恢复 100%</summary>
+        public void ResetZoom()
+        {
+            SetZoom(Current, ZoomManager.DefaultZoom);
+        }
+
+        /// <summary>
+        /// 把 n 级步进应用到鼠标所在的标签（Ctrl+滚轮用）。
+        /// 命中某个网页返回 true（调用方据此决定是否吞掉滚轮消息）；鼠标不在网页上返回 false。
+        /// 只认当前选中的标签：未选中的 TabPage 在 TabControl 里占着同一块位置但是隐藏的，
+        /// 若按几何位置遍历会把缩放加到隐藏标签上（看起来就是“滚轮没反应”）。
+        /// </summary>
+        public bool ZoomAtPoint(Point screenPos, int steps)
+        {
+            TabInfo tab = Current;
+            if (tab == null || tab.View == null || tab.View.CoreWebView2 == null) return false;
+
+            Rectangle rect;
+            try { rect = tab.View.RectangleToScreen(tab.View.ClientRectangle); }
+            catch (Exception) { return false; }
+            if (!rect.Contains(screenPos)) return false;
+
+            SetZoom(tab, ZoomManager.StepsFrom(ZoomManager.FactorOf(tab.View), steps));
+            return true;
+        }
+
         /// <summary>
         /// 新建标签页。
         /// url 为空 → 显示"新标签页（书签墙）"（NewTabPage.Enabled 为 false 时回落到空白页）；
@@ -179,6 +248,9 @@ namespace LoongBrowser
             }
 
             Wire(tab);
+
+            // 沿用会话默认缩放（用户调过缩放后，新开标签保持同一比例）
+            ZoomManager.Apply(view, ZoomManager.SessionDefault);
 
             // 绑定全屏事件
             FullscreenManager.BindWebView(view);
@@ -276,6 +348,19 @@ namespace LoongBrowser
         private void Wire(TabInfo tab)
         {
             var view = tab.View;
+
+            // 缩放比例变化（自己设的、或内核侧自己改的都算）→
+            // 同步会话默认值（新标签页沿用）+ 刷新菜单/工具栏上的百分比
+            view.ZoomFactorChanged += delegate
+            {
+                try
+                {
+                    double cur = ZoomManager.Round(view.ZoomFactor);
+                    ZoomManager.SessionDefault = cur;
+                    if (tab == Current && ZoomChanged != null) ZoomChanged();
+                }
+                catch (Exception) { }
+            };
 
             view.CoreWebView2.DocumentTitleChanged += delegate
             {

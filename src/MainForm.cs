@@ -1,5 +1,6 @@
 // MainForm.cs —— 主窗口：菜单、工具栏、地址栏、标签页容器
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Windows.Forms;
@@ -8,7 +9,7 @@ using Microsoft.Web.WebView2.WinForms;
 
 namespace LoongBrowser
 {
-    public class MainForm : Form
+    public class MainForm : Form, IMessageFilter
     {
         private TabManager _tabMgr;
         private TabControl _tabs;
@@ -18,6 +19,13 @@ namespace LoongBrowser
         private BookmarkStore _bookmarks;
         private DownloadStore _downloads;
         private HistoryStore _history;
+
+        // ---------- 缩放相关 UI（「查看」菜单 + 工具栏缩放下拉） ----------
+        private ToolStripMenuItem _miZoomIn;
+        private ToolStripMenuItem _miZoomOut;
+        private ToolStripMenuItem _miZoomReset;
+        private ToolStripMenuItem _miZoomList;
+        private ToolStripDropDownButton _zoomButton;
 
         public MainForm(string initialUrl)
         {
@@ -49,6 +57,7 @@ namespace LoongBrowser
             _tabMgr.Bookmarks = _bookmarks;
             _tabMgr.History = _history;
             _tabMgr.TabChanged += OnTabChanged;
+            _tabMgr.ZoomChanged += delegate { RefreshZoomUi(); };
 
             // 书签增删后刷新正在显示的新标签页（书签墙）
             _bookmarks.Changed += delegate
@@ -77,6 +86,23 @@ namespace LoongBrowser
 
             // 初始化全屏管理器
             FullscreenManager.Init(this, _menu, _toolbar, _tabs);
+
+            // 网页缩放：菜单/工具栏的初始比例 + 进程内键盘与滚轮入口
+            RefreshZoomUi();
+            Application.AddMessageFilter(this);
+        }
+
+        /// <summary>当前标签的缩放比例（读数，供状态展示与测试使用）</summary>
+        public double CurrentZoom
+        {
+            get { return _tabMgr == null ? ZoomManager.SessionDefault : _tabMgr.ActiveZoom(); }
+        }
+
+        /// <summary>窗口关闭时摘掉全局消息过滤器（多窗口各挂各的，不留在链上）</summary>
+        protected override void OnFormClosed(FormClosedEventArgs e)
+        {
+            try { Application.RemoveMessageFilter(this); } catch (Exception) { }
+            base.OnFormClosed(e);
         }
 
         private long _lastUrlTick;
@@ -189,10 +215,63 @@ namespace LoongBrowser
             mTool.DropDownItems.Add(new ToolStripSeparator());
             mTool.DropDownItems.Add("关于 LoongBrowser", null, delegate { ShowAbout(); });
 
+            var mView = BuildViewMenu();
+
             _menu.Items.Add(mBookmark);
             _menu.Items.Add(mDownload);
             _menu.Items.Add(mHistory);
+            _menu.Items.Add(mView);
             _menu.Items.Add(mTool);
+        }
+
+        /// <summary>「查看」菜单：放大 / 缩小 / 实际大小 + 预设档位列表</summary>
+        private ToolStripMenuItem BuildViewMenu()
+        {
+            var mView = new ToolStripMenuItem("查看(&V)");
+
+            _miZoomIn = new ToolStripMenuItem("放大");
+            _miZoomIn.ShortcutKeyDisplayString = "Ctrl + +";   // 只做展示，实际拦截在消息过滤器里
+            _miZoomIn.Click += delegate { ZoomIn(); };
+            mView.DropDownItems.Add(_miZoomIn);
+
+            _miZoomOut = new ToolStripMenuItem("缩小");
+            _miZoomOut.ShortcutKeyDisplayString = "Ctrl + -";
+            _miZoomOut.Click += delegate { ZoomOut(); };
+            mView.DropDownItems.Add(_miZoomOut);
+
+            _miZoomReset = new ToolStripMenuItem("实际大小（100%）");
+            _miZoomReset.ShortcutKeyDisplayString = "Ctrl + 0";
+            _miZoomReset.Click += delegate { ResetZoom(); };
+            mView.DropDownItems.Add(_miZoomReset);
+
+            mView.DropDownItems.Add(new ToolStripSeparator());
+
+            _miZoomList = new ToolStripMenuItem("缩放（100%）");
+            _miZoomList.DropDownItems.AddRange(BuildZoomPresetItems());
+            _miZoomList.DropDownOpening += delegate { RefreshZoomUi(); };
+            mView.DropDownItems.Add(_miZoomList);
+
+            mView.DropDownOpening += delegate { RefreshZoomUi(); };
+            return mView;
+        }
+
+        /// <summary>生成预设档位菜单项（「查看」菜单与工具栏下拉各用一份，Tag 存比例值）</summary>
+        private ToolStripMenuItem[] BuildZoomPresetItems()
+        {
+            var items = new List<ToolStripMenuItem>();
+            foreach (double p in ZoomManager.Presets)
+            {
+                var mi = new ToolStripMenuItem(ZoomManager.Percent(p));
+                mi.Tag = (object)p;
+                mi.Click += delegate(object s, EventArgs e)
+                {
+                    var item = s as ToolStripMenuItem;
+                    if (item == null || !(item.Tag is double)) return;
+                    SetZoom((double)item.Tag);
+                };
+                items.Add(mi);
+            }
+            return items.ToArray();
         }
 
         private void BuildToolbar()
@@ -289,6 +368,14 @@ namespace LoongBrowser
             _toolbar.Items.Add(new ToolStripSeparator());
             _toolbar.Items.Add(btnStar);
             _toolbar.Items.Add(btnTranslate);
+            _toolbar.Items.Add(new ToolStripSeparator());
+
+            _zoomButton = new ToolStripDropDownButton();
+            _zoomButton.ToolTipText = "网页缩放 50%~200%（Ctrl + 加/减键，或 Ctrl + 滚轮）";
+            _zoomButton.DropDownItems.AddRange(BuildZoomPresetItems());
+            _zoomButton.DropDownOpening += delegate { RefreshZoomUi(); };
+            _toolbar.Items.Add(_zoomButton);
+
             _toolbar.Items.Add(new ToolStripSeparator());
             _toolbar.Items.Add(btnNewTab);
             _toolbar.Items.Add(btnCloseTab);
@@ -545,12 +632,152 @@ namespace LoongBrowser
             }
         }
 
+        // ---------- 网页缩放 ----------
+
+        private void ZoomIn()
+        {
+            if (_tabMgr != null) _tabMgr.ZoomIn();
+            RefreshZoomUi();
+        }
+
+        private void ZoomOut()
+        {
+            if (_tabMgr != null) _tabMgr.ZoomOut();
+            RefreshZoomUi();
+        }
+
+        private void ResetZoom()
+        {
+            if (_tabMgr != null) _tabMgr.ResetZoom();
+            RefreshZoomUi();
+        }
+
+        private void SetZoom(double factor)
+        {
+            if (_tabMgr != null) _tabMgr.SetZoom(factor);
+            RefreshZoomUi();
+        }
+
+        /// <summary>把当前比例刷到菜单勾选、菜单/工具栏的百分比文本上</summary>
+        private void RefreshZoomUi()
+        {
+            if (_tabMgr == null) return;
+            double cur = _tabMgr.ActiveZoom();
+            string pct = ZoomManager.Percent(cur);
+
+            if (_zoomButton != null) _zoomButton.Text = pct;
+            if (_miZoomList != null) _miZoomList.Text = "缩放（" + pct + "）";
+
+            // 到达 50% / 200% 边界时置灰对应的步进命令（预设档位仍可直接点选）
+            if (_miZoomIn != null) _miZoomIn.Enabled = !ZoomManager.AtMax(cur);
+            if (_miZoomOut != null) _miZoomOut.Enabled = !ZoomManager.AtMin(cur);
+
+            CheckZoomPreset(_miZoomList, cur);
+            CheckZoomPreset(_zoomButton, cur);
+        }
+
+        /// <summary>按当前比例勾中预设档位（同一档才算选中，按 1% 比较）</summary>
+        private static void CheckZoomPreset(ToolStripDropDownItem owner, double current)
+        {
+            if (owner == null) return;
+            foreach (ToolStripItem item in owner.DropDownItems)
+            {
+                var mi = item as ToolStripMenuItem;
+                if (mi == null || !(mi.Tag is double)) continue;
+                mi.Checked = ZoomManager.SamePercent((double)mi.Tag, current);
+            }
+        }
+
+        // ---------- 缩放的键盘 / 滚轮入口（进程内消息过滤器） ----------
+        //
+        // 只拦“发给本程序窗口”的消息：焦点在地址栏等宿主控件上时，Ctrl+= / Ctrl+- / Ctrl+0
+        // 与 Ctrl+滚轮都排在宿主线程的消息队列里，这里拦截一次即可，命中即吞掉。
+        //
+        // 焦点在网页里时，按键/滚轮的接收方是 WebView2 内核**进程**里的窗口（不同 pid），
+        // 根本不会进本程序的消息队列 —— 要在那种情形下接管，只能装系统级低级钩子
+        // （WH_KEYBOARD_LL / WH_MOUSE_LL，全局监听全键盘鼠标）；权衡后明确不做：
+        // 不为一个快捷键引入系统级钩子，网页有焦点时的缩放交给内核自身的快捷键，
+        // 任何情况下都还能用「查看」菜单与工具栏下拉完成缩放。
+        //
+        // 菜单项上的 ShortcutKeyDisplayString 只是展示文字，不注册菜单快捷键，
+        // 避免同一次按键被两条链各响应一次。
+
+        private const int WM_KEYDOWN = 0x0100;
+        private const int WM_MOUSEWHEEL = 0x020A;
+
+        public bool PreFilterMessage(ref Message m)
+        {
+            if (_tabMgr == null) return false;
+            // 多窗口各挂了一个过滤器：先确认消息是发给本窗口的，免得把缩放加到别的窗口
+            if (!IsForThisWindow(m.HWnd)) return false;
+
+            switch (m.Msg)
+            {
+                case WM_KEYDOWN:
+                    return FilterZoomKey(m);
+                case WM_MOUSEWHEEL:
+                    return FilterZoomWheel(m);
+                default:
+                    return false;
+            }
+        }
+
+        /// <summary>
+        /// 消息归属判定：拿到目标窗口往上找宿主 Form（内核的子窗口也能归位到承载它的 WebView2 控件）。
+        /// 认不出归属时退回“本窗口是活动窗口”这条判据。
+        /// </summary>
+        private bool IsForThisWindow(IntPtr hwnd)
+        {
+            try
+            {
+                Control c = Control.FromChildHandle(hwnd);
+                if (c != null)
+                {
+                    Form owner = c.FindForm();
+                    if (owner != null) return owner == this;
+                }
+                return Form.ActiveForm == this;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>Ctrl+= / Ctrl+- / Ctrl+0（含 Ctrl+Shift+= 与小键盘写法），命中即吞掉</summary>
+        private bool FilterZoomKey(Message m)
+        {
+            Keys code = ((Keys)(long)m.WParam) & Keys.KeyCode;
+            ZoomAction action = ZoomManager.KeyAction(
+                (Control.ModifierKeys & Keys.Control) != 0, code);
+            if (action == ZoomAction.None) return false;
+
+            if (action == ZoomAction.ZoomIn) ZoomIn();
+            else if (action == ZoomAction.ZoomOut) ZoomOut();
+            else ResetZoom();
+            return true;
+        }
+
+        /// <summary>Ctrl+滚轮：在鼠标所在的标签上缩放；没压在网页上的滚轮保持原样</summary>
+        private bool FilterZoomWheel(Message m)
+        {
+            int delta = (short)(((long)m.WParam) >> 16);           // HIWORD = 本格位移（±120 一格）
+            int steps = ZoomManager.WheelSteps(
+                (Control.ModifierKeys & Keys.Control) != 0, delta);
+            if (steps == 0) return false;
+
+            bool hit = _tabMgr.ZoomAtPoint(Cursor.Position, steps);
+            if (hit) RefreshZoomUi();
+            return hit;                                            // 只有真正在网页上缩放时才吞掉滚轮
+        }
+
         // ---------- 标签联动 ----------
 
         private void OnTabChanged(TabInfo tab)
         {
             if (tab == null || tab.View == null) return;
             if (tab.Page != _tabs.SelectedTab) return;
+            RefreshZoomUi();                // 每个标签有自己的比例，切标签要刷新显示
             if (_addressBox == null) return;
             if (!_addressBox.Focused)
             {
