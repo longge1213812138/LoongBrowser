@@ -1,11 +1,58 @@
 # Build script for LoongBrowser (ASCII only)
 # Usage: powershell -File build.ps1
+#
+# Compiler: a vendored Roslyn (Microsoft.Net.Compilers.Toolset, net472 build) at
+# tools/roslyn/csc.exe. Roslyn understands modern C# (string interpolation $"..." etc.)
+# AND compiles against .NET Framework 4.x, so the existing bare-name references
+# (System.Windows.Forms.dll, ...) keep resolving exactly as before. The compiled
+# LoongBrowser.exe still has ZERO runtime dependencies.
 $ErrorActionPreference = "Continue"
 $root = $PSScriptRoot
 
-$csc = Join-Path $env:WINDIR "Microsoft.NET\Framework64\v4.0.30319\csc.exe"
-if (-not (Test-Path $csc)) { $csc = Join-Path $env:WINDIR "Microsoft.NET\Framework\v4.0.30319\csc.exe" }
-if (-not (Test-Path $csc)) { Write-Output "ERROR: csc.exe not found"; exit 1 }
+# ---------- resolve a modern C# compiler (Roslyn, C# 6+) ----------
+function Ensure-Roslyn {
+    param($root)
+    $dir = Join-Path $root "tools\roslyn"
+    $exe = Join-Path $dir "csc.exe"
+    if (Test-Path $exe) { return $exe }
+
+    # First-run bootstrap: fetch the toolset once (needs network), then retry.
+    $pkg = "microsoft.net.compilers.toolset"
+    $ver = "4.8.0"
+    $url = "https://api.nuget.org/v3-flatcontainer/$pkg/$ver/$pkg.$ver.nupkg"
+    $tmp = Join-Path $env:TEMP "roslyn-toolset.nupkg"
+    try {
+        (New-Object System.Net.WebClient).DownloadFile($url, $tmp)
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        $zip = [System.IO.Compression.ZipFile]::OpenRead($tmp)
+        foreach ($e in $zip.Entries) {
+            if ($e.FullName -like "tasks/net472/*") {
+                $dest = Join-Path $dir ($e.FullName -replace "tasks/net472/","")
+                $parent = Split-Path $dest
+                if (-not (Test-Path $parent)) { New-Item -ItemType Directory -Force -Path $parent | Out-Null }
+                [System.IO.Compression.ZipFileExtensions]::ExtractToFile($e, $dest, $true)
+            }
+        }
+        $zip.Dispose()
+        Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+    } catch {
+        Write-Output "WARN: could not auto-fetch Roslyn compiler ($_)"
+    }
+    if (Test-Path $exe) { return $exe } else { return $null }
+}
+
+$csc = Ensure-Roslyn $root
+$useRoslyn = $false
+if (-not $csc) {
+    # Fallback to the legacy Framework csc (C# 5 only). $"..." interpolation will FAIL here.
+    $csc = Join-Path $env:WINDIR "Microsoft.NET\Framework64\v4.0.30319\csc.exe"
+    if (-not (Test-Path $csc)) { $csc = Join-Path $env:WINDIR "Microsoft.NET\Framework\v4.0.30319\csc.exe" }
+    if (-not (Test-Path $csc)) { Write-Output "ERROR: no C# compiler found"; exit 1 }
+    Write-Output "WARN: using legacy csc (C# 5) — string interpolation is NOT supported. Run the Roslyn bootstrap to upgrade."
+} else {
+    $useRoslyn = $true
+    Write-Output "Using Roslyn compiler: $csc"
+}
 
 $dist = Join-Path $root "dist"
 if (Test-Path $dist) { Remove-Item $dist -Recurse -Force }
@@ -30,6 +77,7 @@ $appSrc = Get-ChildItem (Join-Path $root "src") -Filter *.cs |
     ForEach-Object { $_.FullName }
 
 $appArgs = @("/nologo", "/target:winexe", "/codepage:65001", "/optimize+", ("/out:" + (Join-Path $dist "LoongBrowser.exe")))
+if ($useRoslyn) { $appArgs += "/langversion:latest" }
 foreach ($r in $appRefs) { $appArgs += ("/r:" + $r) }
 foreach ($s in $appSrc) { $appArgs += $s }
 
@@ -44,6 +92,7 @@ if ($LASTEXITCODE -ne 0) {
 $insSrc = Join-Path $root "src\Installer.cs"
 $insRefs = @("System.Windows.Forms.dll", "System.Drawing.dll", "Microsoft.CSharp.dll")
 $insArgs = @("/nologo", "/target:winexe", "/codepage:65001", "/optimize+", ("/out:" + (Join-Path $dist "LoongBrowserSetup.exe")))
+if ($useRoslyn) { $insArgs += "/langversion:latest" }
 foreach ($r in $insRefs) { $insArgs += ("/r:" + $r) }
 $insArgs += $insSrc
 
