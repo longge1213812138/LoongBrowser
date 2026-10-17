@@ -6,7 +6,6 @@
 //   · 自绘圆角卡片：选中=白底深色字，未选中=浅灰底灰字
 //   · 超出宽度用省略号，完整标题通过悬停提示（TabControl.ShowToolTips + TabPage.ToolTipText）
 //   · 每个标签右侧带关闭按钮（x），点击可关闭标签页
-//   · 支持暗色模式
 using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -45,36 +44,18 @@ namespace LoongBrowser
 
         private static readonly Font TitleFont = MakeFont(TitleSize);
 
-        // ========== 亮色模式颜色 ==========
-        private static readonly Color LightSelectedFill = Color.White;
-        private static readonly Color LightSelectedBorder = Color.FromArgb(148, 163, 184);
-        private static readonly Color LightSelectedText = Color.FromArgb(20, 23, 27);
-        private static readonly Color LightNormalFill = Color.FromArgb(247, 249, 251);
-        private static readonly Color LightNormalBorder = Color.FromArgb(211, 218, 227);
-        private static readonly Color LightNormalText = Color.FromArgb(90, 98, 112);
-        private static readonly Color LightStripBack = Color.FromArgb(233, 237, 242);
-
-        // ========== 暗色模式颜色 ==========
-        private static readonly Color DarkSelectedFill = Color.FromArgb(55, 55, 55);
-        private static readonly Color DarkSelectedBorder = Color.FromArgb(80, 80, 80);
-        private static readonly Color DarkSelectedText = Color.FromArgb(230, 230, 230);
-        private static readonly Color DarkNormalFill = Color.FromArgb(40, 40, 40);
-        private static readonly Color DarkNormalBorder = Color.FromArgb(55, 55, 55);
-        private static readonly Color DarkNormalText = Color.FromArgb(170, 170, 170);
-        private static readonly Color DarkStripBack = Color.FromArgb(35, 35, 35);
-
-        // ========== 当前模式使用的颜色 ==========
-        private static Color SelectedFill { get { return DarkModeManager.IsEnabled ? DarkSelectedFill : LightSelectedFill; } }
-        private static Color SelectedBorder { get { return DarkModeManager.IsEnabled ? DarkSelectedBorder : LightSelectedBorder; } }
-        private static Color SelectedText { get { return DarkModeManager.IsEnabled ? DarkSelectedText : LightSelectedText; } }
-        private static Color NormalFill { get { return DarkModeManager.IsEnabled ? DarkNormalFill : LightNormalFill; } }
-        private static Color NormalBorder { get { return DarkModeManager.IsEnabled ? DarkNormalBorder : LightNormalBorder; } }
-        private static Color NormalText { get { return DarkModeManager.IsEnabled ? DarkNormalText : LightNormalText; } }
+        // ========== 标签条配色（无暗色形态，见 docs/adr/0002） ==========
+        private static readonly Color SelectedFill = Color.White;
+        private static readonly Color SelectedBorder = Color.FromArgb(148, 163, 184);
+        private static readonly Color SelectedText = Color.FromArgb(20, 23, 27);
+        private static readonly Color NormalFill = Color.FromArgb(247, 249, 251);
+        private static readonly Color NormalBorder = Color.FromArgb(211, 218, 227);
+        private static readonly Color NormalText = Color.FromArgb(90, 98, 112);
 
         /// <summary>标签条背景色（供外部查询）</summary>
         public static Color Background
         {
-            get { return DarkModeManager.IsEnabled ? DarkStripBack : LightStripBack; }
+            get { return Color.FromArgb(233, 237, 242); }
         }
 
         /// <summary>标题字体（供测试/外部查询）</summary>
@@ -110,17 +91,6 @@ namespace LoongBrowser
             try { tabs.BackColor = Background; } catch (Exception) { }   // 标签条底色
             tabs.DrawItem += DrawItem;
             tabs.MouseDown += Tabs_MouseDown;        // 检测关闭按钮点击
-
-            // 订阅暗色模式变化事件
-            DarkModeManager.DarkModeChanged += delegate(bool dark)
-            {
-                try
-                {
-                    tabs.BackColor = Background;
-                    tabs.Invalidate();  // 重绘所有标签
-                }
-                catch (Exception) { }
-            };
         }
 
         /// <summary>检测鼠标点击是否在某个标签的关闭按钮上</summary>
@@ -201,13 +171,10 @@ namespace LoongBrowser
             Point mousePos = tabs.PointToClient(Cursor.Position);
             bool isHovered = rect.Contains(mousePos);
 
-            bool isDark = DarkModeManager.IsEnabled;
-
             // 悬停时显示圆形背景
             if (isHovered)
             {
-                Color hoverBg = isDark ? Color.FromArgb(80, 80, 80) : Color.FromArgb(200, 220, 230, 240);
-                using (var brush = new SolidBrush(hoverBg))
+                using (var brush = new SolidBrush(Color.FromArgb(200, 220, 230, 240)))
                     g.FillEllipse(brush, rect);
             }
 
@@ -222,8 +189,6 @@ namespace LoongBrowser
                 Color textColor;
                 if (isHovered)
                     textColor = Color.FromArgb(220, 80, 80);  // 悬停时红色
-                else if (isDark)
-                    textColor = isTabSelected ? Color.FromArgb(180, 180, 180) : Color.FromArgb(120, 120, 120);
                 else
                     textColor = isTabSelected ? Color.FromArgb(130, 130, 130) : Color.FromArgb(170, 170, 170);
 

@@ -106,7 +106,7 @@ namespace LoongBrowser
             Act("H8 无 Ctrl 的普通 +", ZoomManager.KeyAction(false, System.Windows.Forms.Keys.Oemplus), ZoomAction.None);
             Act("H9 无 Ctrl 的 0", ZoomManager.KeyAction(false, System.Windows.Forms.Keys.D0), ZoomAction.None);
             Act("H10 Ctrl + C 不受影响", ZoomManager.KeyAction(true, System.Windows.Forms.Keys.C), ZoomAction.None);
-            Act("H11 Ctrl + D（暗色模式快捷键）不受影响", ZoomManager.KeyAction(true, System.Windows.Forms.Keys.D), ZoomAction.None);
+            Act("H11 Ctrl + D（非缩放快捷键）不受影响", ZoomManager.KeyAction(true, System.Windows.Forms.Keys.D), ZoomAction.None);
             Act("H12 Ctrl + Shift + D 不受影响", ZoomManager.KeyAction(true, System.Windows.Forms.Keys.D), ZoomAction.None);
             Act("H13 Ctrl + T 不受影响", ZoomManager.KeyAction(true, System.Windows.Forms.Keys.T), ZoomAction.None);
 

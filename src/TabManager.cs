@@ -60,9 +60,6 @@ namespace LoongBrowser
             // 订阅标签关闭按钮事件
             TabStrip.TabCloseRequested += CloseTab;
 
-            // 订阅暗色模式变化事件
-            DarkModeManager.DarkModeChanged += OnDarkModeChanged;
-
             // 启动右键菜单延迟执行定时器
             if (_pendingTimer == null)
             {
@@ -79,28 +76,6 @@ namespace LoongBrowser
                 };
                 _pendingTimer.Start();
             }
-        }
-
-        /// <summary>暗色模式切换时，刷新所有标签页的网页样式</summary>
-        private void OnDarkModeChanged(bool enabled)
-        {
-            foreach (var tab in _list)
-            {
-                ApplyDarkModeCss(tab.View);
-            }
-        }
-
-        /// <summary>将暗色模式 CSS 注入到指定的 WebView</summary>
-        private async void ApplyDarkModeCss(WebView2 view)
-        {
-            if (view == null || view.CoreWebView2 == null) return;
-            try
-            {
-                string css = DarkModeManager.GetInjectionCss();
-                string script = DarkModeManager.GetInjectionScript();
-                await view.CoreWebView2.ExecuteScriptAsync(script);
-            }
-            catch (Exception) { }
         }
 
         public TabInfo Current
@@ -380,12 +355,10 @@ namespace LoongBrowser
                 }
             };
 
-            // 导航成功 → 记一条历史 + 注入暗色模式 CSS
+            // 导航成功 → 记一条历史
             view.CoreWebView2.NavigationCompleted += delegate(object s, CoreWebView2NavigationCompletedEventArgs e)
             {
                 if (!e.IsSuccess) return;
-                // 注入暗色模式 CSS
-                ApplyDarkModeCss(view);
                 // 记录历史
                 if (History == null) return;
                 string url = "";

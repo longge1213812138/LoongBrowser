@@ -215,15 +215,6 @@ body{font:14px/1.5 'Segoe UI','Microsoft YaHei',system-ui,sans-serif;color:#1f23
 .empty{margin:64px auto;max-width:420px;text-align:center;color:#5b6472;font-size:15px;line-height:2.1}
 .empty span{font-size:12.5px;color:#98a1af}
 .ft{margin-top:34px;text-align:center;font-size:12px;color:#a5adb9}
-@media (prefers-color-scheme:dark){
-body{color:#e6e8eb;background:#1c1f24}
-.card{background:#25292f;border-color:#333941;color:#e6e8eb}
-.card:hover{border-color:#48505a;box-shadow:0 2px 10px rgba(0,0,0,.35)}
-.ph,.ic{background:transparent}
-.cnt{color:#8b93a1}
-.empty{color:#aab2bd}
-.ft{color:#7c8590}
-}
 ";
 
         private const string Js = @"
