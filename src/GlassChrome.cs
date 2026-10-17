@@ -234,16 +234,19 @@ namespace LoongBrowser
             for (int i = 0; i < _topMenus.Count; i++)
             {
                 ChromeMenuItem m = _topMenus[i];
-                Size textSize = TextRenderer.MeasureText(g, m.Text, VistaTheme.UIFont,
-                    new Size(int.MaxValue, int.MaxValue), TextFormatFlags.NoPrefix);
-                var r = new Rectangle(x, _menuBarRect.Y + 2, textSize.Width + 18, _menuBarRect.Height - 4);
+                // 宽度必须与绘制同口径（GDI+）：DrawChromeText 用 DrawString，
+                // 若这里仍用 TextRenderer.MeasureText（GDI），菜单项矩形会偏移几个像素。
+                int textWidth = VistaTheme.MeasureWidth(g, m.Text, VistaTheme.UIFont);
+                var r = new Rectangle(x, _menuBarRect.Y + 2, textWidth + 18, _menuBarRect.Height - 4);
 
                 if (i == _openMenu)
                     VistaTheme.DrawSurface(g, r, VistaTheme.AccentBlueLight, VistaTheme.AccentBlue, 4);
                 else if (i == _hotMenu)
                     VistaTheme.DrawSurface(g, r, Color.FromArgb(235, 244, 252), Color.Empty, 4);
 
-                TextRenderer.DrawText(g, m.Text, VistaTheme.UIFont, r, VistaTheme.Text,
+                // 菜单项坐在玻璃上，阴影用 Glass 极性（半透明白）
+                VistaTheme.DrawChromeText(g, m.Text, VistaTheme.UIFont, r, VistaTheme.Text,
+                    VistaTheme.ShadowPolarity.Glass,
                     TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
 
                 m.LayoutRect = r;
@@ -335,15 +338,18 @@ namespace LoongBrowser
                     using (var b = new SolidBrush(selected ? VistaTheme.CloseHover : Color.FromArgb(206, 216, 227)))
                         g.FillEllipse(b, closeRect);
                 }
+                // 页签两态都纯黑（用户 2026-10 指定），未选中不再用灰
                 ChromeIcons.Draw(g, "close", closeRect,
-                    (i == _hotClose && selected) ? Color.White : (selected ? VistaTheme.Text : VistaTheme.TextMuted));
+                    (i == _hotClose && selected) ? Color.White : VistaTheme.Text);
 
                 string title = _tabs.TabPages[i].Text;
                 if (string.IsNullOrEmpty(title)) title = "新标签页";
                 int textWidth = closeRect.Left - r.X - 16;
                 var textRect = new Rectangle(r.X + 10, r.Y, Math.Max(0, textWidth), r.Height);
-                TextRenderer.DrawText(g, VistaTheme.Ellipsize(g, title, VistaTheme.UIFont, textRect.Width),
-                    VistaTheme.UIFont, textRect, selected ? VistaTheme.Text : VistaTheme.TextMuted,
+                // 两态都纯黑：选中态由卡片底色（白 / #EEF2F7）区分，不再靠灰字
+                title = VistaTheme.Ellipsize(g, title, VistaTheme.UIFont, textRect.Width);
+                VistaTheme.DrawChromeText(g, title, VistaTheme.UIFont, textRect, VistaTheme.Text,
+                    VistaTheme.ShadowPolarity.LightSurface,
                     TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
             }
 

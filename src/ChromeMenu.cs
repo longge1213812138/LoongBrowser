@@ -83,12 +83,15 @@ namespace LoongBrowser
         private static readonly Color Back = Color.FromArgb(252, 252, 253);
         private static readonly Color Border = Color.FromArgb(150, 165, 182);
         private static readonly Color HotBack = Color.FromArgb(206, 228, 248);
-        private static readonly Color TextColor = Color.FromArgb(28, 37, 48);
+        // 菜单项文字直接用 VistaTheme.Text（纯黑）；这里只保留禁用态的灰。
         private static readonly Color DisabledColor = Color.FromArgb(160, 170, 182);
 
         public ChromeDropDown(List<ChromeMenuItem> items, int minWidth)
         {
             _items = items;
+            // 统一外壳字体（SimHei 10pt）：面板虽全自绘，仍要设 Font 让
+            // 控件级度量（如子控件、AutoScale）与自绘文字一致。
+            Font = VistaTheme.UIFont;
             FormBorderStyle = FormBorderStyle.None;
             ShowInTaskbar = false;
             StartPosition = FormStartPosition.Manual;
@@ -113,12 +116,12 @@ namespace LoongBrowser
                 {
                     ChromeMenuItem m = _items[i];
                     if (m.IsSeparator) continue;
+                    // 宽度必须用与绘制同一口径的 GDI+ 度量（VistaTheme.MeasureWidth），
+                    // 否则 TextRenderer 与 DrawChromeText 的口径差会让文字贴边或被截。
                     int need = PadX + TextPad
-                             + TextRenderer.MeasureText(g, m.Text, VistaTheme.UIFont,
-                                 new Size(int.MaxValue, int.MaxValue), TextFormatFlags.NoPrefix).Width;
+                             + VistaTheme.MeasureWidth(g, m.Text, VistaTheme.UIFont);
                     if (!string.IsNullOrEmpty(m.Shortcut))
-                        need += 30 + TextRenderer.MeasureText(g, m.Shortcut, VistaTheme.UIFont,
-                            new Size(int.MaxValue, int.MaxValue), TextFormatFlags.NoPrefix).Width;
+                        need += 30 + VistaTheme.MeasureWidth(g, m.Shortcut, VistaTheme.UIFont);
                     if (m.HasChildren) need += 22;
                     need += PadRight;
                     if (need > w) w = need;
@@ -203,7 +206,7 @@ namespace LoongBrowser
                         g.FillPath(b, path);
                 }
 
-                Color fg = m.Enabled ? TextColor : DisabledColor;
+                Color fg = m.Enabled ? VistaTheme.Text : DisabledColor;
 
                 // 勾选标记
                 if (m.Checked)
@@ -217,14 +220,18 @@ namespace LoongBrowser
                 }
 
                 var textRect = new Rectangle(PadX + TextPad, y, Width - PadX - PadRight - TextPad, _heights[i]);
-                TextRenderer.DrawText(g, m.Text, VistaTheme.UIFont, textRect, fg,
+                // 菜单坐在不透明浅色底上 → LightSurface 极性（半透明黑阴影）
+                VistaTheme.DrawChromeText(g, m.Text, VistaTheme.UIFont, textRect, fg,
+                    VistaTheme.ShadowPolarity.LightSurface,
                     TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
 
                 // 快捷键
                 if (!string.IsNullOrEmpty(m.Shortcut))
                 {
                     var sr = new Rectangle(Width - PadRight - 150, y, 150 - TextPad, _heights[i]);
-                    TextRenderer.DrawText(g, m.Shortcut, VistaTheme.UIFont, sr, DisabledColor,
+                    // 快捷键是灰字小号，坐在白色菜单底上 → 同样用 LightSurface 深色阴影
+                    VistaTheme.DrawChromeText(g, m.Shortcut, VistaTheme.UIFont, sr, DisabledColor,
+                        VistaTheme.ShadowPolarity.LightSurface,
                         TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
                 }
 

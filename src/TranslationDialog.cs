@@ -24,6 +24,8 @@ namespace LoongBrowser
         public TranslationDialog(string text)
         {
             _originalText = text ?? "";
+            // 统一外壳字体（SimHei 10pt，见 VistaTheme.UIFont）
+            Font = VistaTheme.UIFont;
             InitializeComponent();
             LoadLanguages();
             _txtSource.Text = _originalText;
@@ -303,6 +305,8 @@ namespace LoongBrowser
 
         public TranslationConfigDialog()
         {
+            // 统一外壳字体（SimHei 10pt，见 VistaTheme.UIFont）
+            Font = VistaTheme.UIFont;
             InitializeComponent();
             LoadCurrentConfig();
         }

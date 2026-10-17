@@ -199,13 +199,13 @@ namespace LoongBrowser
         private const string Css = @"
 *{box-sizing:border-box}
 html,body{margin:0;min-height:100%}
-body{font:14px/1.5 'Segoe UI','Microsoft YaHei',system-ui,sans-serif;color:#1f2329;background:#f6f7f9}
+body{font:14px/1.5 'SimHei','Microsoft YaHei',sans-serif;color:#000000;background:#f6f7f9;text-shadow:0 1px 1px rgba(0,0,0,.18)}
 .wrap{max-width:1080px;margin:0 auto;padding:28px 24px 40px}
 .hd{display:flex;align-items:baseline;gap:10px;margin:0 2px 16px}
 .ttl{font-size:18px;font-weight:600}
 .cnt{font-size:12px;color:#8b93a1}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(196px,1fr));gap:10px}
-.card{display:flex;align-items:center;gap:10px;padding:10px 12px;background:#fff;border:1px solid #e6e8eb;border-radius:10px;text-decoration:none;color:#1f2329;transition:box-shadow .15s,transform .15s,border-color .15s}
+.card{display:flex;align-items:center;gap:10px;padding:10px 12px;background:#fff;border:1px solid #e6e8eb;border-radius:10px;text-decoration:none;color:#000000;transition:box-shadow .15s,transform .15s,border-color .15s}
 .card:hover{border-color:#c9d2dd;box-shadow:0 2px 10px rgba(20,30,50,.08);transform:translateY(-1px)}
 .card:focus{outline:2px solid #3b82f6;outline-offset:1px}
 .ic{width:32px;height:32px;flex:0 0 32px;border-radius:6px;object-fit:contain}

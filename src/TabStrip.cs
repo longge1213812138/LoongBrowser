@@ -31,7 +31,7 @@ namespace LoongBrowser
         public const int GapBottom = 3;
 
         /// <summary>标题字号（默认 9pt，这里调大）</summary>
-        public const float TitleSize = 10.5f;
+        public const float TitleSize = 11.5f;
 
         /// <summary>关闭按钮尺寸</summary>
         public const int CloseBtnSize = 16;
@@ -42,15 +42,18 @@ namespace LoongBrowser
         /// <summary>当点击标签的关闭按钮时触发，参数为标签索引</summary>
         public static event Action<int> TabCloseRequested;
 
+        /// <summary>字体族优先顺序：黑体优先（用户 2026-10 指定），雅黑与 Segoe UI 仅作族缺失时的兜底</summary>
+        private static readonly string[] Families = new string[] { "SimHei", "Microsoft YaHei UI", "Segoe UI" };
+
         private static readonly Font TitleFont = MakeFont(TitleSize);
 
         // ========== 标签条配色（无暗色形态，见 docs/adr/0002） ==========
+        // 标签文字两态统一用 VistaTheme.Text（纯黑）：未选中标签不再做灰阶区分。
+        // 原 SelectedText / NormalText 两个私有常量因此不再有引用，直接删除以免留下死字段。
         private static readonly Color SelectedFill = Color.White;
         private static readonly Color SelectedBorder = Color.FromArgb(148, 163, 184);
-        private static readonly Color SelectedText = Color.FromArgb(20, 23, 27);
         private static readonly Color NormalFill = Color.FromArgb(247, 249, 251);
         private static readonly Color NormalBorder = Color.FromArgb(211, 218, 227);
-        private static readonly Color NormalText = Color.FromArgb(90, 98, 112);
 
         /// <summary>标签条背景色（供外部查询）</summary>
         public static Color Background
@@ -154,8 +157,11 @@ namespace LoongBrowser
             int closeBtnSpace = CloseBtnSize + CloseBtnRightMargin + 2;
             var textRect = new Rectangle(r.X + 12, r.Y + 1, Math.Max(8, r.Width - 12 - closeBtnSpace), r.Height - 2);
 
-            TextRenderer.DrawText(g, text, TitleFont, textRect,
-                selected ? SelectedText : NormalText,
+            // 选中/未选中两态统一纯黑；卡片是不透明的白底或浅灰底，因此用 LightSurface 极性（深色阴影）。
+            // 走 VistaTheme.DrawChromeText 而非 TextRenderer：后者忽略 foreColor 的 alpha，画不出半透明阴影
+            // （实测细节见 src/VistaTheme.cs 里 DrawChromeText 的 remarks）。
+            VistaTheme.DrawChromeText(g, text, TitleFont, textRect,
+                VistaTheme.Text, VistaTheme.ShadowPolarity.LightSurface,
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter
                 | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
 
@@ -179,8 +185,12 @@ namespace LoongBrowser
             }
 
             // 绘制 x 符号
+            // 字体与主题保持一致：黑体优先（× 在 SimHei 里同样有字形，这里只影响度量与笔画粗细，
+            // 让关闭按钮的字面与标签文字同族，避免同一条标签上出现两种字体气质）。
+            // 注意：× 是图标不是标签文字，因此仍用 TextRenderer 直接绘制、不加阴影
+            // （灰色阶是"未选中更淡"的图标层级，不是文字层级，用户只要求文字两态统一）。
             string closeText = "\u00D7";  // multiplication sign (x)
-            using (var font = new Font("Segoe UI", 9f, FontStyle.Bold))
+            using (var font = new Font(Families[0], 9f, FontStyle.Bold))
             {
                 var textSize = TextRenderer.MeasureText(g, closeText, font);
                 int textX = rect.X + (rect.Width - textSize.Width) / 2;
@@ -210,10 +220,9 @@ namespace LoongBrowser
 
         private static Font MakeFont(float size)
         {
-            string[] families = new string[] { "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI" };
-            for (int i = 0; i < families.Length; i++)
+            for (int i = 0; i < Families.Length; i++)
             {
-                try { return new Font(families[i], size, FontStyle.Regular, GraphicsUnit.Point); }
+                try { return new Font(Families[i], size, FontStyle.Regular, GraphicsUnit.Point); }
                 catch (Exception) { }
             }
             return new Font(FontFamily.GenericSansSerif, size, FontStyle.Regular, GraphicsUnit.Point);

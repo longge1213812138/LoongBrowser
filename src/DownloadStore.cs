@@ -78,6 +78,8 @@ namespace LoongBrowser
         public DownloadDialog(DownloadStore store)
         {
             _store = store;
+            // 统一外壳字体（SimHei 10pt，见 VistaTheme.UIFont）
+            Font = VistaTheme.UIFont;
 
             Text = "下载管理";
             Size = new Size(760, 460);
