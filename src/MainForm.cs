@@ -13,22 +13,29 @@ namespace LoongBrowser
     {
         private TabManager _tabMgr;
         private TabControl _tabs;
-        private MenuStrip _menu;
-        private ToolStrip _toolbar;
-        private ToolStripTextBox _addressBox;
         private BookmarkStore _bookmarks;
         private DownloadStore _downloads;
         private HistoryStore _history;
 
-        // ---------- 缩放相关 UI（「查看」菜单 + 工具栏缩放下拉） ----------
-        private ToolStripMenuItem _miZoomIn;
-        private ToolStripMenuItem _miZoomOut;
-        private ToolStripMenuItem _miZoomReset;
-        private ToolStripMenuItem _miZoomList;
-        private ToolStripDropDownButton _zoomButton;
+        // ---------- 自绘外壳（Vista 风格玻璃） ----------
+        private TitleBar _titleBar;
+        private GlassChrome _chrome;
+
+        // ---------- 缩放相关 UI（「查看」菜单里的档位） ----------
+        private ChromeMenuItem _miZoomIn;
+        private ChromeMenuItem _miZoomOut;
+        private ChromeMenuItem _miZoomReset;
+        private ChromeMenuItem _miZoomList;
 
         public MainForm(string initialUrl)
         {
+            // 玻璃层的前置条件：必须在句柄创建之前设好绘制样式。
+            // 放到 OnHandleCreated 里就晚了 —— 那时窗口背景样式已经确定，
+            // GDI 会把客户区涂成不透明色，Acrylic 再也透不出来。
+            SetStyle(ControlStyles.Opaque, true);
+            SetStyle(ControlStyles.AllPaintingInWmPaint, true);
+            SetStyle(ControlStyles.UserPaint, true);
+
             Text = "LoongBrowser";
             StartPosition = FormStartPosition.CenterScreen;
             Size = new Size(1100, 760);
@@ -41,16 +48,35 @@ namespace LoongBrowser
             // 加载翻译配置
             TranslationService.LoadConfig();
 
-            BuildMenu();
-            BuildToolbar();
+            // 自绘标题栏：FormBorderStyle.None 后补回拖动、最大化、关闭
+            FormBorderStyle = FormBorderStyle.None;
+            _titleBar = new TitleBar(this);
+            _titleBar.TitleText = Text;
+
+            // 自绘玻璃外壳：菜单 + 工具栏 + 地址栏 + 标签头
+            _chrome = new GlassChrome();
+            _chrome.AddressSubmit += delegate(string text)
+            {
+                if (text == null) return;
+                string t = text.Trim();
+                if (t.Length == 0) return;
+                _tabMgr.NavigateCurrent(NormalizeUrl(t));
+            };
+            _chrome.TabCloseRequested += delegate(int index)
+            {
+                if (_tabMgr != null) _tabMgr.CloseTab(index);
+            };
 
             _tabs = new TabControl();
             _tabs.Dock = DockStyle.Fill;
-            TabStrip.Style(_tabs);            // 更大字号、统一尺寸、标签之间留间隔
+            _tabs.Visible = true;
+            // 标签条由 GlassChrome 自绘，TabControl 只当 WebView2 容器用
+            TabStrip.HideHeader(_tabs);
 
+            // 添加顺序决定 z-order：Fill 的先加，Dock.Top 的后加
             Controls.Add(_tabs);
-            Controls.Add(_toolbar);
-            Controls.Add(_menu);
+            Controls.Add(_chrome);
+            Controls.Add(_titleBar);
 
             _tabMgr = new TabManager(_tabs);
             _tabMgr.Downloads = _downloads;
@@ -58,6 +84,11 @@ namespace LoongBrowser
             _tabMgr.History = _history;
             _tabMgr.TabChanged += OnTabChanged;
             _tabMgr.ZoomChanged += delegate { RefreshZoomUi(); };
+
+            // 外壳内容依赖 _tabMgr，必须在它构造之后注入
+            _chrome.AttachTabs(_tabs);
+            _chrome.SetMenus(BuildMenus());
+            _chrome.SetButtons(BuildToolButtons());
 
             // 书签增删后刷新正在显示的新标签页（书签墙）
             _bookmarks.Changed += delegate
@@ -78,18 +109,27 @@ namespace LoongBrowser
             timer.Tick += delegate { CheckForwardedUrl(); };
             timer.Start();
 
-            // 订阅暗色模式变化事件，更新界面样式
-            DarkModeManager.DarkModeChanged += OnDarkModeChanged;
-            // 应用初始暗色模式设置
-            DarkModeManager.ApplyToForm(this);
-            ApplyDarkModeToToolbar();
-
             // 初始化全屏管理器
-            FullscreenManager.Init(this, _menu, _toolbar, _tabs);
+            FullscreenManager.Init(this, _chrome, _tabs);
 
             // 网页缩放：菜单/工具栏的初始比例 + 进程内键盘与滚轮入口
             RefreshZoomUi();
             Application.AddMessageFilter(this);
+
+            // 玻璃层：句柄可用后把 Acrylic 模糊应用到窗口
+            // （见 docs/adr/0001-use-acrylic-instead-of-aero-glass.md）
+            GlassManager.Apply(Handle, false);
+        }
+
+        // ---------- 玻璃层 ----------
+
+        /// <summary>玻璃当前是否已生效（供测试与诊断查询）</summary>
+        public bool GlassApplied { get { return GlassManager.IsApplied; } }
+
+        protected override void OnPaintBackground(PaintEventArgs e)
+        {
+            // 故意留空：不绘制背景，露出 Acrylic。
+            // 若这里调用 base.OnPaintBackground，GDI 会把客户区涂成不透明色，玻璃就看不见了。
         }
 
         /// <summary>当前标签的缩放比例（读数，供状态展示与测试使用）</summary>
@@ -130,255 +170,187 @@ namespace LoongBrowser
 
         // ---------- UI 构建 ----------
 
-        private void BuildMenu()
+        /// <summary>构建顶部菜单（交给自绘外壳渲染）</summary>
+        private List<ChromeMenuItem> BuildMenus()
         {
-            _menu = new MenuStrip();
+            var menus = new List<ChromeMenuItem>();
 
-            var mBookmark = new ToolStripMenuItem("书签(&B)");
-            mBookmark.DropDownItems.Add("收藏本页", null, delegate { AddBookmark(); });
-            mBookmark.DropDownItems.Add(new ToolStripSeparator());
-            mBookmark.DropDownItems.Add("书签管理...", null, delegate
-            {
-                new BookmarkDialog(_bookmarks, url => _tabMgr.NewTab(url)).Show(this);
-            });
+            menus.Add(ChromeMenuItem.Sub("书签(&B)",
+                ChromeMenuItem.Item("收藏本页", delegate { AddBookmark(); }),
+                ChromeMenuItem.Separator(),
+                ChromeMenuItem.Item("书签管理...", delegate
+                {
+                    new BookmarkDialog(_bookmarks, url => _tabMgr.NewTab(url)).Show(this);
+                })));
 
-            var mDownload = new ToolStripMenuItem("下载(&D)");
-            mDownload.DropDownItems.Add("下载管理...", null, delegate
-            {
-                new DownloadDialog(_downloads).Show(this);
-            });
+            menus.Add(ChromeMenuItem.Sub("下载(&D)",
+                ChromeMenuItem.Item("下载管理...", delegate
+                {
+                    new DownloadDialog(_downloads).Show(this);
+                })));
 
-            var mHistory = new ToolStripMenuItem("历史(&H)");
-            mHistory.DropDownItems.Add("查看历史记录...", null, delegate
-            {
-                new HistoryDialog(_history, url => _tabMgr.NewTab(url)).Show(this);
-            });
-            mHistory.DropDownItems.Add("清空全部历史记录", null, delegate { ClearAllHistory(); });
+            menus.Add(ChromeMenuItem.Sub("历史(&H)",
+                ChromeMenuItem.Item("查看历史记录...", delegate
+                {
+                    new HistoryDialog(_history, url => _tabMgr.NewTab(url)).Show(this);
+                }),
+                ChromeMenuItem.Item("清空全部历史记录", delegate { ClearAllHistory(); })));
 
-            var mTool = new ToolStripMenuItem("工具(&T)");
-            mTool.DropDownItems.Add("清理缓存", null, delegate
-            {
-                BrowserCleaner.Clear(this, () => _tabMgr.ActiveCore(),
-                    CoreWebView2BrowsingDataKinds.DiskCache, "清理缓存");
-            });
-            mTool.DropDownItems.Add("清理历史记录", null, delegate
-            {
-                BrowserCleaner.Clear(this, () => _tabMgr.ActiveCore(),
-                    CoreWebView2BrowsingDataKinds.BrowsingHistory, "清理历史记录");
-            });
-            mTool.DropDownItems.Add("清理 Cookie", null, delegate
-            {
-                BrowserCleaner.Clear(this, () => _tabMgr.ActiveCore(),
-                    CoreWebView2BrowsingDataKinds.Cookies, "清理 Cookie（将退出所有网站的登录状态）");
-            });
-            mTool.DropDownItems.Add(new ToolStripSeparator());
-            var miNewTab = new ToolStripMenuItem("新标签页显示书签");
-            miNewTab.CheckOnClick = true;
-            miNewTab.Checked = NewTabPage.Enabled;
-            miNewTab.Click += delegate(object s, EventArgs e)
-            {
-                var mi = s as ToolStripMenuItem;
-                if (mi == null) return;
-                NewTabPage.Enabled = mi.Checked;
-                _tabMgr.RefreshNewTabPages();     // 关掉时新标签页会回到空白页
-            };
-            mTool.DropDownItems.Add(miNewTab);
-            var miPopupTop = new ToolStripMenuItem("小窗默认置顶");
-            miPopupTop.CheckOnClick = true;
-            miPopupTop.Checked = PopupWindow.DefaultAlwaysOnTop;
-            miPopupTop.ToolTipText = "B 站画中画等弹出的小窗是否始终显示在最前面";
-            miPopupTop.Click += delegate(object s, EventArgs e)
-            {
-                var mi = s as ToolStripMenuItem;
-                if (mi == null) return;
-                PopupWindow.DefaultAlwaysOnTop = mi.Checked;
-            };
-            mTool.DropDownItems.Add(miPopupTop);
-            mTool.DropDownItems.Add(new ToolStripSeparator());
-            mTool.DropDownItems.Add(new ToolStripSeparator());
-            mTool.DropDownItems.Add("翻译选中文字", null, delegate { TranslateSelectedText(); });
-            mTool.DropDownItems.Add("翻译当前页面", null, delegate { TranslateCurrentPage(); });
-            mTool.DropDownItems.Add("翻译 API 配置...", null, delegate { ShowTranslationConfig(); });
-            
-            var miDarkMode = new ToolStripMenuItem("暗色模式");
-            miDarkMode.CheckOnClick = true;
-            miDarkMode.Checked = DarkModeManager.IsEnabled;
-            miDarkMode.ShortcutKeys = (Keys)(Keys.Control | Keys.Shift | Keys.D);
-            miDarkMode.Click += delegate(object s, EventArgs e)
-            {
-                var mi = s as ToolStripMenuItem;
-                if (mi == null) return;
-                DarkModeManager.IsEnabled = mi.Checked;
-            };
-            mTool.DropDownItems.Add(miDarkMode);
-            mTool.DropDownItems.Add("设为默认浏览器...", null, delegate { SetDefaultBrowser(); });
-            mTool.DropDownItems.Add(new ToolStripSeparator());
-            mTool.DropDownItems.Add("关于 LoongBrowser", null, delegate { ShowAbout(); });
+            menus.Add(BuildViewMenu());
 
-            var mView = BuildViewMenu();
+            menus.Add(ChromeMenuItem.Sub("工具(&T)",
+                ChromeMenuItem.Item("清理缓存", delegate
+                {
+                    BrowserCleaner.Clear(this, () => _tabMgr.ActiveCore(),
+                        CoreWebView2BrowsingDataKinds.DiskCache, "清理缓存");
+                }),
+                ChromeMenuItem.Item("清理历史记录", delegate
+                {
+                    BrowserCleaner.Clear(this, () => _tabMgr.ActiveCore(),
+                        CoreWebView2BrowsingDataKinds.BrowsingHistory, "清理历史记录");
+                }),
+                ChromeMenuItem.Item("清理 Cookie", delegate
+                {
+                    BrowserCleaner.Clear(this, () => _tabMgr.ActiveCore(),
+                        CoreWebView2BrowsingDataKinds.Cookies, "清理 Cookie（将退出所有网站的登录状态）");
+                }),
+                ChromeMenuItem.Separator(),
+                ChromeMenuItem.Check("新标签页显示书签", NewTabPage.Enabled, delegate
+                {
+                    NewTabPage.Enabled = !NewTabPage.Enabled;
+                    _tabMgr.RefreshNewTabPages();
+                }),
+                ChromeMenuItem.Check("小窗默认置顶", PopupWindow.DefaultAlwaysOnTop, delegate
+                {
+                    PopupWindow.DefaultAlwaysOnTop = !PopupWindow.DefaultAlwaysOnTop;
+                }),
+                ChromeMenuItem.Separator(),
+                ChromeMenuItem.Item("翻译选中文字", delegate { TranslateSelectedText(); }),
+                ChromeMenuItem.Item("翻译当前页面", delegate { TranslateCurrentPage(); }),
+                ChromeMenuItem.Item("翻译 API 配置...", delegate { ShowTranslationConfig(); }),
+                ChromeMenuItem.Separator(),
+                ChromeMenuItem.Item("设为默认浏览器...", delegate { SetDefaultBrowser(); }),
+                ChromeMenuItem.Separator(),
+                ChromeMenuItem.Item("关于 LoongBrowser", delegate { ShowAbout(); })));
 
-            _menu.Items.Add(mBookmark);
-            _menu.Items.Add(mDownload);
-            _menu.Items.Add(mHistory);
-            _menu.Items.Add(mView);
-            _menu.Items.Add(mTool);
+            return menus;
         }
 
         /// <summary>「查看」菜单：放大 / 缩小 / 实际大小 + 预设档位列表</summary>
-        private ToolStripMenuItem BuildViewMenu()
+        private ChromeMenuItem BuildViewMenu()
         {
-            var mView = new ToolStripMenuItem("查看(&V)");
+            _miZoomIn = ChromeMenuItem.Item("放大", delegate { ZoomIn(); });
+            _miZoomIn.Shortcut = "Ctrl + +";
+            _miZoomOut = ChromeMenuItem.Item("缩小", delegate { ZoomOut(); });
+            _miZoomOut.Shortcut = "Ctrl + -";
+            _miZoomReset = ChromeMenuItem.Item("实际大小（100%）", delegate { ResetZoom(); });
+            _miZoomReset.Shortcut = "Ctrl + 0";
 
-            _miZoomIn = new ToolStripMenuItem("放大");
-            _miZoomIn.ShortcutKeyDisplayString = "Ctrl + +";   // 只做展示，实际拦截在消息过滤器里
-            _miZoomIn.Click += delegate { ZoomIn(); };
-            mView.DropDownItems.Add(_miZoomIn);
+            _miZoomList = ChromeMenuItem.Sub("缩放（100%）");
+            _miZoomList.Children = BuildZoomPresetItems();
 
-            _miZoomOut = new ToolStripMenuItem("缩小");
-            _miZoomOut.ShortcutKeyDisplayString = "Ctrl + -";
-            _miZoomOut.Click += delegate { ZoomOut(); };
-            mView.DropDownItems.Add(_miZoomOut);
-
-            _miZoomReset = new ToolStripMenuItem("实际大小（100%）");
-            _miZoomReset.ShortcutKeyDisplayString = "Ctrl + 0";
-            _miZoomReset.Click += delegate { ResetZoom(); };
-            mView.DropDownItems.Add(_miZoomReset);
-
-            mView.DropDownItems.Add(new ToolStripSeparator());
-
-            _miZoomList = new ToolStripMenuItem("缩放（100%）");
-            _miZoomList.DropDownItems.AddRange(BuildZoomPresetItems());
-            _miZoomList.DropDownOpening += delegate { RefreshZoomUi(); };
-            mView.DropDownItems.Add(_miZoomList);
-
-            mView.DropDownOpening += delegate { RefreshZoomUi(); };
-            return mView;
+            return ChromeMenuItem.Sub("查看(&V)",
+                _miZoomIn, _miZoomOut, _miZoomReset,
+                ChromeMenuItem.Separator(),
+                _miZoomList);
         }
 
-        /// <summary>生成预设档位菜单项（「查看」菜单与工具栏下拉各用一份，Tag 存比例值）</summary>
-        private ToolStripMenuItem[] BuildZoomPresetItems()
+        /// <summary>生成预设档位菜单项（Tag 用比例值表示，放在 Click 闭包里）</summary>
+        private List<ChromeMenuItem> BuildZoomPresetItems()
         {
-            var items = new List<ToolStripMenuItem>();
+            var items = new List<ChromeMenuItem>();
             foreach (double p in ZoomManager.Presets)
             {
-                var mi = new ToolStripMenuItem(ZoomManager.Percent(p));
-                mi.Tag = (object)p;
-                mi.Click += delegate(object s, EventArgs e)
-                {
-                    var item = s as ToolStripMenuItem;
-                    if (item == null || !(item.Tag is double)) return;
-                    SetZoom((double)item.Tag);
-                };
+                double preset = p;
+                var mi = ChromeMenuItem.Item(ZoomManager.Percent(preset), delegate { SetZoom(preset); });
+                mi.Tag = (object)preset;
                 items.Add(mi);
             }
-            return items.ToArray();
+            return items;
         }
 
-        private void BuildToolbar()
+        /// <summary>构建工具栏按钮（交给自绘外壳渲染）</summary>
+        private List<ChromeToolButton> BuildToolButtons()
         {
-            _toolbar = new ToolStrip();
-            _toolbar.GripStyle = ToolStripGripStyle.Hidden;
-            _toolbar.Padding = new Padding(4, 2, 4, 2);
+            var list = new List<ChromeToolButton>();
 
-            var btnBack = new ToolStripButton("◀");
-            btnBack.ToolTipText = "后退";
-            btnBack.Click += delegate
+            list.Add(ChromeToolButton("back", "后退", delegate
             {
                 var v = _tabMgr.ActiveView();
                 if (v != null && v.CanGoBack) v.GoBack();
-            };
-
-            var btnForward = new ToolStripButton("▶");
-            btnForward.ToolTipText = "前进";
-            btnForward.Click += delegate
+            }));
+            list.Add(ChromeToolButton("forward", "前进", delegate
             {
                 var v = _tabMgr.ActiveView();
                 if (v != null && v.CanGoForward) v.GoForward();
-            };
-
-            var btnRefresh = new ToolStripButton("⟳");
-            btnRefresh.ToolTipText = "刷新";
-            btnRefresh.Click += delegate
+            }));
+            list.Add(ChromeToolButton("refresh", "刷新", delegate
             {
                 var v = _tabMgr.ActiveView();
                 if (v != null && v.CoreWebView2 != null) v.CoreWebView2.Reload();
-            };
-
-            _addressBox = new ToolStripTextBox();
-            _addressBox.BorderStyle = BorderStyle.FixedSingle;
-            _addressBox.AutoSize = false;
-            _addressBox.Width = 520;
-            _addressBox.KeyPress += delegate(object s, KeyPressEventArgs e)
+            }));
+            list.Add(SeparatorButton());
+            list.Add(ChromeToolButton("copy", "复制地址栏内容到剪贴板", delegate
             {
-                if (e.KeyChar == (char)13)
-                {
-                    e.Handled = true;
-                    NavigateFromAddress();
-                }
-            };
-
-            var btnCopy = new ToolStripButton("复制");
-            btnCopy.ToolTipText = "复制地址栏内容到剪贴板";
-            btnCopy.Click += delegate
-            {
-                string text = _addressBox.Text;
+                string text = _chrome.AddressText;
                 if (!string.IsNullOrEmpty(text))
                 {
                     try { Clipboard.SetText(text); } catch (Exception) { }
                 }
-            };
-
-            var btnPaste = new ToolStripButton("粘贴");
-            btnPaste.ToolTipText = "从剪贴板粘贴到地址栏";
-            btnPaste.Click += delegate
+            }));
+            list.Add(ChromeToolButton("paste", "从剪贴板粘贴到地址栏", delegate
             {
                 try
                 {
                     string clip = Clipboard.GetText();
                     if (!string.IsNullOrEmpty(clip))
                     {
-                        _addressBox.Text = clip;
-                        _addressBox.Focus();
-                        _addressBox.SelectAll();
+                        _chrome.AddressText = clip;
+                        _chrome.FocusAddress();
                     }
                 }
                 catch (Exception) { }
-            };
+            }));
+            list.Add(SeparatorButton());
+            list.Add(ChromeToolButton("star", "收藏本页", delegate { AddBookmark(); }));
+            list.Add(ChromeToolButton("translate", "翻译选中文字或当前页面", delegate { TranslateSelectedText(); }));
+            list.Add(SeparatorButton());
+            list.Add(ChromeToolButton("zoom", "网页缩放 50%~200%（Ctrl + 加/减键，或 Ctrl + 滚轮）",
+                delegate { OpenZoomMenu(); }));
+            list.Add(SeparatorButton());
+            list.Add(ChromeToolButton("plus", "新标签", delegate { _tabMgr.NewTab(null); }));
+            list.Add(ChromeToolButton("close", "关闭当前标签", delegate { _tabMgr.CloseCurrent(); }));
 
-            var btnNewTab = new ToolStripButton("＋新标签");
-            btnNewTab.Click += delegate { _tabMgr.NewTab(null); };
+            return list;
+        }
 
-            var btnCloseTab = new ToolStripButton("✕关闭");
-            btnCloseTab.Click += delegate { _tabMgr.CloseCurrent(); };
+        private static ChromeToolButton ChromeToolButton(string icon, string tooltip, Action click)
+        {
+            var b = new ChromeToolButton();
+            b.Icon = icon;
+            b.Tooltip = tooltip;
+            b.Click = click;
+            return b;
+        }
 
-            var btnStar = new ToolStripButton("☆ 收藏");
-            btnStar.Click += delegate { AddBookmark(); };
+        private static ChromeToolButton SeparatorButton()
+        {
+            var b = new ChromeToolButton();
+            b.Separator = true;
+            return b;
+        }
 
-            var btnTranslate = new ToolStripButton("翻译");
-            btnTranslate.ToolTipText = "翻译选中文字或当前页面";
-            btnTranslate.Click += delegate { TranslateSelectedText(); };
+        /// <summary>工具栏缩放下拉：在弹出的菜单里列预设档位</summary>
+        private void OpenZoomMenu()
+        {
+            RefreshZoomUi();
+            var items = BuildZoomPresetItems();
+            var dd = new ChromeDropDown(items, 140);
 
-            _toolbar.Items.Add(btnBack);
-            _toolbar.Items.Add(btnForward);
-            _toolbar.Items.Add(btnRefresh);
-            _toolbar.Items.Add(new ToolStripSeparator());
-            _toolbar.Items.Add(_addressBox);
-            _toolbar.Items.Add(btnCopy);
-            _toolbar.Items.Add(btnPaste);
-            _toolbar.Items.Add(new ToolStripSeparator());
-            _toolbar.Items.Add(btnStar);
-            _toolbar.Items.Add(btnTranslate);
-            _toolbar.Items.Add(new ToolStripSeparator());
-
-            _zoomButton = new ToolStripDropDownButton();
-            _zoomButton.ToolTipText = "网页缩放 50%~200%（Ctrl + 加/减键，或 Ctrl + 滚轮）";
-            _zoomButton.DropDownItems.AddRange(BuildZoomPresetItems());
-            _zoomButton.DropDownOpening += delegate { RefreshZoomUi(); };
-            _toolbar.Items.Add(_zoomButton);
-
-            _toolbar.Items.Add(new ToolStripSeparator());
-            _toolbar.Items.Add(btnNewTab);
-            _toolbar.Items.Add(btnCloseTab);
+            // 定位到缩放按钮下方
+            Point p = _chrome.PointToScreen(new Point(_chrome.Width - 200, VistaTheme.TitleBarHeight
+                + VistaTheme.MenuBarHeight + VistaTheme.ToolBarHeight));
+            dd.ShowAt(p);
         }
 
         // ---------- 功能动作 ----------
@@ -399,7 +371,9 @@ namespace LoongBrowser
         }
 
         private void NavigateFromAddress()
-        {            string t = _addressBox.Text.Trim();
+        {
+            if (_chrome == null) return;
+            string t = _chrome.AddressText.Trim();
             if (t.Length == 0) return;
             _tabMgr.NavigateCurrent(NormalizeUrl(t));
         }
@@ -665,7 +639,6 @@ namespace LoongBrowser
             double cur = _tabMgr.ActiveZoom();
             string pct = ZoomManager.Percent(cur);
 
-            if (_zoomButton != null) _zoomButton.Text = pct;
             if (_miZoomList != null) _miZoomList.Text = "缩放（" + pct + "）";
 
             // 到达 50% / 200% 边界时置灰对应的步进命令（预设档位仍可直接点选）
@@ -673,16 +646,14 @@ namespace LoongBrowser
             if (_miZoomOut != null) _miZoomOut.Enabled = !ZoomManager.AtMin(cur);
 
             CheckZoomPreset(_miZoomList, cur);
-            CheckZoomPreset(_zoomButton, cur);
         }
 
         /// <summary>按当前比例勾中预设档位（同一档才算选中，按 1% 比较）</summary>
-        private static void CheckZoomPreset(ToolStripDropDownItem owner, double current)
+        private static void CheckZoomPreset(ChromeMenuItem owner, double current)
         {
-            if (owner == null) return;
-            foreach (ToolStripItem item in owner.DropDownItems)
+            if (owner == null || owner.Children == null) return;
+            foreach (ChromeMenuItem mi in owner.Children)
             {
-                var mi = item as ToolStripMenuItem;
                 if (mi == null || !(mi.Tag is double)) continue;
                 mi.Checked = ZoomManager.SamePercent((double)mi.Tag, current);
             }
@@ -778,73 +749,16 @@ namespace LoongBrowser
             if (tab == null || tab.View == null) return;
             if (tab.Page != _tabs.SelectedTab) return;
             RefreshZoomUi();                // 每个标签有自己的比例，切标签要刷新显示
-            if (_addressBox == null) return;
-            if (!_addressBox.Focused)
+            if (_chrome == null) return;
+            TextBox box = _chrome.AddressBox;
+            if (box == null || box.Focused) return;
+            try
             {
-                try
-                {
-                    string src = tab.View.Source != null ? tab.View.Source.ToString() : "";
-                    // 新标签页/空白页不把 about:blank 显示到地址栏
-                    _addressBox.Text = NewTabPage.IsInternalUrl(src) ? "" : src;
-                }
-                catch (Exception) { }
+                string src = tab.View.Source != null ? tab.View.Source.ToString() : "";
+                // 新标签页/空白页不把 about:blank 显示到地址栏
+                _chrome.AddressText = NewTabPage.IsInternalUrl(src) ? "" : src;
             }
-        }
-
-        // ---------- 暗色模式 ----------
-
-        /// <summary>暗色模式切换时更新界面样式</summary>
-        private void OnDarkModeChanged(bool enabled)
-        {
-            DarkModeManager.ApplyToForm(this);
-            ApplyDarkModeToToolbar();
-            // 更新工具菜单中的暗色模式勾选状态
-            UpdateDarkModeMenuItem();
-        }
-
-        /// <summary>更新工具菜单中暗色模式的勾选状态</summary>
-        private void UpdateDarkModeMenuItem()
-        {
-            if (_menu == null) return;
-            foreach (ToolStripItem item in _menu.Items)
-            {
-                ToolStripMenuItem toolMenu = item as ToolStripMenuItem;
-                if (toolMenu != null && toolMenu.Text.Contains("工具"))
-                {
-                    foreach (ToolStripItem subItem in toolMenu.DropDownItems)
-                    {
-                        ToolStripMenuItem mi = subItem as ToolStripMenuItem;
-                        if (mi != null && mi.Text.Contains("暗色模式"))
-                        {
-                            mi.Checked = DarkModeManager.IsEnabled;
-                            return;
-                        }
-                    }
-                }
-            }
-        }
-
-        /// <summary>将暗色模式样式应用到工具栏</summary>
-        private void ApplyDarkModeToToolbar()
-        {
-            if (_toolbar == null) return;
-            bool dark = DarkModeManager.IsEnabled;
-
-            _toolbar.BackColor = dark ? DarkModeManager.ToolStripBackColor : SystemColors.Control;
-            _toolbar.ForeColor = dark ? DarkModeManager.ControlForeColor : SystemColors.ControlText;
-
-            foreach (ToolStripItem item in _toolbar.Items)
-            {
-                item.BackColor = dark ? DarkModeManager.ToolStripBackColor : SystemColors.Control;
-                item.ForeColor = dark ? DarkModeManager.ControlForeColor : SystemColors.ControlText;
-            }
-
-            // 地址栏特殊处理
-            if (_addressBox != null)
-            {
-                _addressBox.BackColor = dark ? DarkModeManager.ControlBackColor : SystemColors.Window;
-                _addressBox.ForeColor = dark ? DarkModeManager.ControlForeColor : SystemColors.WindowText;
-            }
+            catch (Exception) { }
         }
     }
 }

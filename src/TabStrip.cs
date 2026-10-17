@@ -80,6 +80,22 @@ namespace LoongBrowser
         /// <summary>标题字体（供测试/外部查询）</summary>
         public static Font TabTitleFont { get { return TitleFont; } }
 
+        /// <summary>
+        /// 把 TabControl 的标签头压到最小：只留它当 WebView2 的容器，
+        /// 标签的视觉与点击命中交给 GlassChrome 自绘（见 docs/adr/0004）。
+        /// 实测 ItemSize 高度设 1 后仍残留约 5px 的标题区，无法完全归零。
+        /// </summary>
+        public static void HideHeader(TabControl tabs)
+        {
+            if (tabs == null) return;
+            tabs.Appearance = TabAppearance.FlatButtons;
+            tabs.SizeMode = TabSizeMode.Fixed;
+            tabs.Multiline = false;
+            tabs.ItemSize = new Size(0, 1);
+            tabs.Padding = new Point(0, 0);
+            try { tabs.BackColor = Background; } catch (Exception) { }
+        }
+
         /// <summary>把标签条设成统一尺寸 + 更大字号 + 自绘样式</summary>
         public static void Style(TabControl tabs)
         {

@@ -66,6 +66,11 @@ namespace LoongBrowser
             public bool SavedMenuVisible;
             public bool SavedToolbarVisible;
             public FormWindowState SavedWindowState;
+
+            // ---- 自绘外壳（Vista 玻璃）----
+            // 菜单、工具栏、标签头合并成一条 GlassChrome，全屏时作为整体隐藏。
+            public GlassChrome Chrome;
+            public bool SavedChromeVisible;
         }
 
         private static readonly List<UiState> _states = new List<UiState>();
@@ -79,6 +84,7 @@ namespace LoongBrowser
         private static bool _savedMenuVisible;
         private static bool _savedToolbarVisible;
         private static bool _savedTabsVisible;
+        private static bool _savedChromeVisible;
 
         // ---------- 当前全屏控件 ----------
         private static WebView2 _view;
@@ -86,7 +92,24 @@ namespace LoongBrowser
         private static DockStyle _originalDock;
         private static int _originalChildIndex;     // 在父控件中的位置
 
-        /// <summary>初始化（每个主窗口构造时调用一次）：登记界面引用 + 挂 F11 键</summary>
+        /// <summary>初始化（自绘外壳版本）：菜单/工具栏/标签头合并为一条 chrome</summary>
+        public static void Init(Form form, GlassChrome chrome, TabControl tabs)
+        {
+            if (form == null) return;
+            RemoveState(form);                      // 防重复登记
+
+            var st = new UiState();
+            st.Form = form;
+            st.Chrome = chrome;
+            st.Tabs = tabs;
+            _states.Add(st);
+
+            form.KeyPreview = true;
+            form.KeyDown += OnKeyDown;
+            form.FormClosed += delegate { RemoveState(form); };
+        }
+
+        /// <summary>初始化（原生控件版本，保留给测试与旧调用点）</summary>
         public static void Init(Form form, MenuStrip menu, ToolStrip toolbar, TabControl tabs)
         {
             if (form == null) return;
@@ -102,6 +125,43 @@ namespace LoongBrowser
             form.KeyPreview = true;
             form.KeyDown += OnKeyDown;
             form.FormClosed += delegate { RemoveState(form); };
+        }
+
+        // ---------- 外壳可见性（两种外壳形态统一入口） ----------
+
+        /// <summary>取当前外壳是否可见（Chrome 优先，其次旧 Menu/Toolbar）</summary>
+        private static bool GetChromeVisible(UiState st)
+        {
+            if (st == null) return false;
+            if (st.Chrome != null) return st.Chrome.Visible;
+            bool m = st.Menu == null || st.Menu.Visible;
+            bool t = st.Toolbar == null || st.Toolbar.Visible;
+            return m && t;
+        }
+
+        /// <summary>设置当前外壳是否可见</summary>
+        private static void SetChromeVisible(UiState st, bool visible)
+        {
+            if (st == null) return;
+            if (st.Chrome != null)
+            {
+                st.Chrome.Visible = visible;
+                return;
+            }
+            if (st.Menu != null) st.Menu.Visible = visible;
+            if (st.Toolbar != null) st.Toolbar.Visible = visible;
+        }
+
+        /// <summary>取标签栏是否可见</summary>
+        private static bool GetTabsVisible(UiState st)
+        {
+            return st != null && st.Tabs != null && st.Tabs.Visible;
+        }
+
+        /// <summary>设置标签栏是否可见</summary>
+        private static void SetTabsVisible(UiState st, bool visible)
+        {
+            if (st != null && st.Tabs != null) st.Tabs.Visible = visible;
         }
 
         /// <summary>指定窗口当前是否处于 F11 轻量全屏</summary>
@@ -227,17 +287,17 @@ namespace LoongBrowser
             _savedTopMost = form.TopMost;
             // 轻量全屏期间菜单/工具栏本来就是隐藏的 → 这里保存的也是“隐藏”，
             // 退出真全屏后轻量全屏的状态得以保留
+            _savedChromeVisible = GetChromeVisible(st);
             _savedMenuVisible = st.Menu != null && st.Menu.Visible;
             _savedToolbarVisible = st.Toolbar != null && st.Toolbar.Visible;
-            _savedTabsVisible = st.Tabs != null && st.Tabs.Visible;
+            _savedTabsVisible = GetTabsVisible(st);
 
             // ---- 2) 从原父控件摘除 WebView2 ----
             if (_originalParent != null) _originalParent.Controls.Remove(view);
 
             // ---- 3) 隐藏浏览器 UI ----
-            if (st.Menu != null) st.Menu.Visible = false;
-            if (st.Toolbar != null) st.Toolbar.Visible = false;
-            if (st.Tabs != null) st.Tabs.Visible = false;
+            SetChromeVisible(st, false);
+            SetTabsVisible(st, false);
 
             // ---- 4) 把 WebView2 直接挂到 Form 上 ----
             view.Dock = DockStyle.Fill;
@@ -288,9 +348,10 @@ namespace LoongBrowser
             _view.Dock = _originalDock;
 
             // ---- 4) 恢复浏览器 UI ----
+            if (st.Chrome != null) st.Chrome.Visible = _savedChromeVisible;
             if (st.Menu != null) st.Menu.Visible = _savedMenuVisible;
             if (st.Toolbar != null) st.Toolbar.Visible = _savedToolbarVisible;
-            if (st.Tabs != null) st.Tabs.Visible = _savedTabsVisible;
+            SetTabsVisible(st, _savedTabsVisible);
 
             IsFullscreen = false;
             _fsState = null;
@@ -340,6 +401,7 @@ namespace LoongBrowser
         {
             if (st.Active) return;
 
+            st.SavedChromeVisible = GetChromeVisible(st);
             st.SavedMenuVisible = st.Menu != null && st.Menu.Visible;
             st.SavedToolbarVisible = st.Toolbar != null && st.Toolbar.Visible;
             // 最小化状态下按 F11 没意义，按 Normal 记，退出时不把窗口还原成最小化
@@ -347,8 +409,7 @@ namespace LoongBrowser
                 ? FormWindowState.Normal
                 : st.Form.WindowState;
 
-            if (st.Menu != null) st.Menu.Visible = false;
-            if (st.Toolbar != null) st.Toolbar.Visible = false;
+            SetChromeVisible(st, false);
             if (st.Form.WindowState != FormWindowState.Maximized)
                 st.Form.WindowState = FormWindowState.Maximized;
 
@@ -359,6 +420,7 @@ namespace LoongBrowser
         {
             if (!st.Active) return;
 
+            if (st.Chrome != null) st.Chrome.Visible = st.SavedChromeVisible;
             if (st.Menu != null) st.Menu.Visible = st.SavedMenuVisible;
             if (st.Toolbar != null) st.Toolbar.Visible = st.SavedToolbarVisible;
 
