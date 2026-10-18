@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
+using System.IO;
 using System.Windows.Forms;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
@@ -202,10 +203,17 @@ namespace LoongBrowser
                     // 目录为空时效果最好（之后写进去的文件全部由文件系统加密）。不支持 EFS 的系统会静默跳过。
                     AppPaths.EnsureUserDataDirEncrypted();
                     _env = await CoreWebView2Environment.CreateAsync(null, AppPaths.UserDataDir);
+                    KernelDiag.Trace("CreateAsync 成功；运行时版本: " +
+                        (KernelDiag.RuntimeVersion() ?? "(未知)"));
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
-                    ShowRuntimeMissing();
+                    // 区分两件事：根本没有运行时，还是运行时在但环境创建失败。
+                    // 以前一律弹“未检测到运行时”，把真正的失败原因藏掉了。
+                    KernelDiag.Write(KernelDiag.CollectFacts(AppPaths.UserDataDir));
+                    KernelDiag.Write("CreateAsync 失败: " + KernelDiag.Describe(ex));
+                    if (KernelDiag.RuntimeVersion() == null) ShowRuntimeMissing();
+                    else ShowKernelFailure("创建内核环境", ex);
                     RemoveTab(tab);
                     return;
                 }
@@ -217,9 +225,18 @@ namespace LoongBrowser
             }
             catch (Exception ex)
             {
-                MessageBox.Show("浏览器内核初始化失败：" + ex.Message, "错误");
-                RemoveTab(tab);
-                return;
+                KernelDiag.Write("EnsureCoreWebView2Async 失败: " + KernelDiag.Describe(ex));
+
+                // 失败后内核环境可能是坏的：丢掉它，下一个标签会重新创建。
+                // 否则一次失败会把整个进程后续所有标签都拖死。
+                bool recovered = await RetryWithFreshEnvironment(view, ex);
+                if (!recovered)
+                {
+                    KernelDiag.Write(KernelDiag.CollectFacts(AppPaths.UserDataDir));
+                    ShowKernelFailure("初始化内核控制器", ex);
+                    RemoveTab(tab);
+                    return;
+                }
             }
 
             Wire(tab);
@@ -658,6 +675,79 @@ namespace LoongBrowser
             string[] parts = host.Split('.');
             if (parts.Length <= 2) return host;
             return parts[parts.Length - 2] + "." + parts[parts.Length - 1];
+        }
+
+        /// <summary>
+        /// 内核控制器初始化失败后的自救：丢掉可能已损坏的环境，清掉遗留的锁文件，
+        /// 再用新建的环境重试一次。成功返回 true，失败返回 false（调用方负责提示）。
+        ///
+        /// 为什么值得重试：0x800700AA（资源被占用）常由上一次未退干净的内核进程或
+        /// 数据目录里的陈旧锁造成。这类状态是一次性的，换一个干净环境往往就能起来，
+        /// 直接弹错会让用户以为程序彻底坏了。
+        /// </summary>
+        private async System.Threading.Tasks.Task<bool> RetryWithFreshEnvironment(WebView2 view, Exception firstError)
+        {
+            try
+            {
+                KernelDiag.Write("开始自救重试：丢弃旧环境 + 清理陈旧锁");
+                _env = null;
+                TryClearStaleLocks(AppPaths.UserDataDir);
+
+                _env = await CoreWebView2Environment.CreateAsync(null, AppPaths.UserDataDir);
+                KernelDiag.Write("自救重试：CreateAsync 成功，重新初始化控制器");
+
+                await view.EnsureCoreWebView2Async(_env);
+                KernelDiag.Write("自救重试成功（首次失败原因: " + KernelDiag.Describe(firstError) + "）");
+                return true;
+            }
+            catch (Exception retryEx)
+            {
+                KernelDiag.Write("自救重试同样失败: " + KernelDiag.Describe(retryEx));
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 清理 WebView2 数据目录里可能导致「资源被占用」的陈旧锁文件。
+        /// 能做到"只在没被占用时才删"：正被占用时 File.Delete 会抛异常，
+        /// 这里只记录、不重试、不影响后续流程。
+        /// </summary>
+        private static void TryClearStaleLocks(string userDataDir)
+        {
+            try
+            {
+                string eb = Path.Combine(userDataDir, "EBWebView");
+                if (!Directory.Exists(eb)) return;
+
+                // lockfile 是内核的单实例锁；内核已退出却残留时，会让下一次启动一直等。
+                foreach (string name in new string[] { "lockfile", "SingletonLock", "SingletonSocket", "SingletonCookie" })
+                {
+                    string p = Path.Combine(eb, name);
+                    if (!File.Exists(p)) continue;
+                    try
+                    {
+                        File.Delete(p);
+                        KernelDiag.Write("已清理陈旧锁: " + p);
+                    }
+                    catch (Exception ex)
+                    {
+                        // 删不掉通常说明确实被占用，这是正常情况，交给重试去试
+                        KernelDiag.Write("清理锁失败（可能正被占用）: " + p + " -> " + ex.GetType().Name);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                KernelDiag.Write("清理锁过程异常: " + ex.GetType().Name);
+            }
+        }
+
+        /// <summary>显示内核初始化失败详情，并把诊断日志路径告诉用户</summary>
+        private static void ShowKernelFailure(string stage, Exception ex)
+        {
+            MessageBox.Show(
+                KernelDiag.BuildUserMessage(stage, ex, AppPaths.UserDataDir),
+                "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
 
         private void ShowRuntimeMissing()
