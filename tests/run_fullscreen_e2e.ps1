@@ -2,9 +2,14 @@
 # Usage: powershell -File tests\run_fullscreen_e2e.ps1
 $root = Split-Path $PSScriptRoot -Parent
 
-$csc = Join-Path $env:WINDIR "Microsoft.NET\Framework64\v4.0.30319\csc.exe"
+# Roslyn first: src contains C# 6+ syntax (await in catch), the legacy
+# Framework csc.exe (C# 5) cannot compile it. Same compiler as build.ps1.
+$csc = Join-Path $root "tools\roslyn\csc.exe"
+if (-not (Test-Path $csc)) { $csc = Join-Path $env:WINDIR "Microsoft.NET\Framework64\v4.0.30319\csc.exe" }
 if (-not (Test-Path $csc)) { $csc = Join-Path $env:WINDIR "Microsoft.NET\Framework\v4.0.30319\csc.exe" }
 if (-not (Test-Path $csc)) { Write-Output "ERROR: csc.exe not found"; exit 1 }
+$langArgs = @()
+if ($csc -like "*roslyn*") { $langArgs += "/langversion:latest" }
 
 $outDir = Join-Path $PSScriptRoot "_out_fullscreen_e2e"
 if (Test-Path $outDir) { Remove-Item $outDir -Recurse -Force }
@@ -31,7 +36,7 @@ Get-ChildItem (Join-Path $root "src") -Filter *.cs |
     ForEach-Object { $src += $_.FullName }
 $src += (Join-Path $PSScriptRoot "FullscreenE2ETest.cs")
 
-$cmdArgs = @("/nologo", "/target:exe", "/codepage:65001", "/main:LoongBrowser.FullscreenE2ETest", ("/out:" + $exe))
+$cmdArgs = @("/nologo", "/target:exe", "/codepage:65001", "/main:LoongBrowser.FullscreenE2ETest") + $langArgs + @("/out:" + $exe)
 foreach ($r in $refs) { $cmdArgs += ("/r:" + $r) }
 foreach ($s in $src) { $cmdArgs += $s }
 

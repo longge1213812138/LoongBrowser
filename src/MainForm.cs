@@ -109,8 +109,8 @@ namespace LoongBrowser
             timer.Tick += delegate { CheckForwardedUrl(); };
             timer.Start();
 
-            // 初始化全屏管理器
-            FullscreenManager.Init(this, _chrome, _tabs);
+            // 初始化全屏管理器（真全屏要连自绘标题栏一起隐藏）
+            FullscreenManager.Init(this, _titleBar, _chrome, _tabs);
 
             // 网页缩放：菜单/工具栏的初始比例 + 进程内键盘与滚轮入口
             RefreshZoomUi();
