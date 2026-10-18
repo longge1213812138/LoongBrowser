@@ -52,7 +52,19 @@ LoongBrowser：极简 Windows 桌面浏览器（WebView2/Chromium 内核 + C# Wi
 | 边带长什么样 | 就是玻璃本身：只清面不铺色，补两条 1px 边缘线 |
 | 最大化溢出工作区 | `WM_GETMINMAXINFO` 把最大化矩形与最大跟踪尺寸钉到监视区工作区 |
 | 最大化→还原多出 14px | 记下最大化前矩形，还原后用 `BeginInvoke` 钉回（系统会连发两次 Resize，第二次才撑大） |
-| 拖拽缩放绕过 MinimumSize | 自己把 `MinimumSize` 写进 `ptMinTrackSize`（WinForms 在 Form.WndProc 之后才填，那时还是 136×39） |
+| ~~拖拽缩放绕过 MinimumSize~~ | 已随系统缩放方案一并移除（见下） |
+
+**2026-10-19 修正（重要）**：上表的 `WS_THICKFRAME` 方案**已被推翻**。实测（二分定位）这一位会让
+DWM 在窗口失活时停用 Acrylic：点菜单、切应用、点桌面之后整个窗口变成不透明纯色块，玻璃消失且
+重新 `Apply` / 强制重绘 / 重设边框都救不回来。用户要求"玻璃常驻、不做降级"，所以：
+
+- **移除 `WS_THICKFRAME`**，连同 `WM_NCCALCSIZE` / `WM_GETMINMAXINFO` / 还原尺寸校正整套补丁一起删掉；
+- 缩放改为 `WindowResizer.DragSession` 自己实现（边缘带按下 → 按位移改 `Bounds`，`MinimumSize` 钳制）；
+- 取舍：**不做 Aero Snap 半屏吸附**（需要系统缩放循环，与玻璃常驻互斥）；
+- 回归：`tests\run_glass_persist_test.ps1` 断言窗口样式不含 `WS_THICKFRAME`，同时断言缩放仍可用；
+- 实测：前台 / 点菜单 / 失焦 / 回前台，玻璃饱和度全程 104 / 96 / 104 / 104。
+
+详见 `docs/adr/0007-resize-border-band.md`。
 
 测试：`tests\run_resize_test.ps1`（27 项，无真实鼠标注入，靠命中测试与窗口状态断言）。
 

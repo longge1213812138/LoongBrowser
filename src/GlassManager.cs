@@ -63,6 +63,7 @@ namespace LoongBrowser
         /// <summary>累计清面次数（供测试核对"每帧都先清面"这一不变量）</summary>
         public static int SurfaceClearCount { get; private set; }
 
+
         /// <summary>
         /// 仅测试用：非 Color.Empty 时清面改用该颜色填充，而不是 PatBlt。
         /// </summary>

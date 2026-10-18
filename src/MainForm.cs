@@ -129,30 +129,21 @@ namespace LoongBrowser
         }
 
         // ---------- 无边框窗口的缩放边框 ----------
+        //
+        // 刻意**不**加 WS_THICKFRAME：实测（二分定位）它会让 DWM 在窗口失活时停用
+        // Acrylic —— 一旦失焦（点菜单、切到别的应用、点桌面），整个窗口变成不透明
+        // 纯色块，玻璃消失且无法恢复。用户要求"玻璃常驻、不做降级"，所以缩放改由
+        // 本类自己实现（见 WindowResizer 顶部说明与 ADR-0007）。
 
-        /// <summary>
-        /// 补回 WS_THICKFRAME：没有它，系统不认为窗口可缩放，命中测试返回 HT* 也不会响应。
-        /// 同时保留最小化/最大化按钮语义。见 docs/adr/0007-resize-border-band.md。
-        /// </summary>
+        /// <summary>保留最小化 / 最大化按钮语义（不加 WS_THICKFRAME）</summary>
         protected override CreateParams CreateParams
         {
             get
             {
                 CreateParams cp = base.CreateParams;
-                cp.Style |= WindowResizer.WS_THICKFRAME
-                          | WindowResizer.WS_MINIMIZEBOX
-                          | WindowResizer.WS_MAXIMIZEBOX;
+                cp.Style |= WindowResizer.WS_MINIMIZEBOX | WindowResizer.WS_MAXIMIZEBOX;
                 return cp;
             }
-        }
-
-        protected override void WndProc(ref Message m)
-        {
-            // 客户区 = 整个窗口矩形（否则 WS_THICKFRAME 会把内容挤进边框）
-            if (WindowResizer.HandleMessage(ref m, this)) return;
-            // 最大化时把窗口矩形钉到工作区（否则会溢出、压住任务栏）
-            if (WindowResizer.HandleMinMaxInfo(ref m, this)) return;
-            base.WndProc(ref m);
         }
 
         /// <summary>窗口已显示且首帧画完：此刻应用 Acrylic 才能一出现就是玻璃</summary>
@@ -173,49 +164,63 @@ namespace LoongBrowser
             };
         }
 
-        // ---------- 最大化 / 还原时的尺寸校正 ----------
+        // ---------- 边缘拖拽缩放（自实现） ----------
 
-        private FormWindowState _lastWindowState = FormWindowState.Normal;
-        private Rectangle _savedNormalBounds = Rectangle.Empty;
+        private WindowResizer.DragSession _resizeSession;
+        private WindowResizer.Edge _hotEdge = WindowResizer.Edge.None;
 
-        /// <summary>
-        /// 无边框 + WS_THICKFRAME 之后，系统仍按"带边框窗口"的规则在最大化/还原之间换算尺寸：
-        /// 还原时会多出 2×边框宽（实测 14px），窗口会比最大化前略大。这里记下最大化前的
-        /// 矩形，还原后钉回去，让"最大化 → 还原"精确回到原样。
-        /// </summary>
-        protected override void OnResize(EventArgs e)
+        protected override void OnMouseDown(MouseEventArgs e)
         {
-            base.OnResize(e);
+            base.OnMouseDown(e);
+            if (e.Button != MouseButtons.Left || WindowState == FormWindowState.Maximized) return;
 
-            // 时序（实测）：最大化 → 还原时先来一次"正确"的 Resize（原矩形），
-            // 紧接着系统又按带边框规则再来一次，把窗口撑大 2×边框宽（14px）。
-            // 所以不能只看 WindowState 的跳变，要在还原之后按原矩形再钉一次。
-            if (WindowState == FormWindowState.Normal && _lastWindowState == FormWindowState.Maximized)
-            {
-                Rectangle target = _savedNormalBounds;
-                if (target != Rectangle.Empty)
-                {
-                    // 系统在还原之后还会再按带边框规则撑大一次，所以排到消息队列末尾再钉，
-                    // 而且钉两次（第二次兜住那一次撑大）。
-                    BeginInvoke(new Action(delegate { RestoreTo(target); }));
-                    BeginInvoke(new Action(delegate { RestoreTo(target); }));
-                }
-            }
-            else if (WindowState == FormWindowState.Normal && Bounds.Width > 0 && Bounds.Height > 0)
-            {
-                _savedNormalBounds = Bounds;
-            }
+            WindowResizer.Edge edge = WindowResizer.HitTest(e.Location, ClientSize);
+            if (edge == WindowResizer.Edge.None) return;
 
-            _lastWindowState = WindowState;
+            _resizeSession = new WindowResizer.DragSession(
+                this, edge, Bounds, Cursor.Position, MinimumSize);
+            Capture = true;
         }
 
-        /// <summary>把窗口钉回最大化前的矩形（无边框窗口还原时系统会多算 2×边框宽）</summary>
-        private void RestoreTo(Rectangle target)
+        protected override void OnMouseMove(MouseEventArgs e)
         {
-            if (IsDisposed || WindowState != FormWindowState.Normal) return;
-            if (Bounds == target) return;
-            Bounds = target;
+            base.OnMouseMove(e);
+
+            if (_resizeSession != null)
+            {
+                _resizeSession.Update(Cursor.Position);
+                return;
+            }
+
+            // 悬停反馈：边缘带上的指针形状
+            WindowResizer.Edge edge = WindowState == FormWindowState.Maximized
+                ? WindowResizer.Edge.None
+                : WindowResizer.HitTest(e.Location, ClientSize);
+            if (edge != _hotEdge)
+            {
+                _hotEdge = edge;
+                Cursor = WindowResizer.CursorFor(edge);
+            }
+        }
+
+        protected override void OnMouseUp(MouseEventArgs e)
+        {
+            base.OnMouseUp(e);
+            if (_resizeSession == null) return;
+            _resizeSession = null;
+            Capture = false;
             ApplyGlassToSurface();
+        }
+
+        protected override void OnMouseLeave(EventArgs e)
+        {
+            base.OnMouseLeave(e);
+            if (_resizeSession != null) return;
+            if (_hotEdge != WindowResizer.Edge.None)
+            {
+                _hotEdge = WindowResizer.Edge.None;
+                Cursor = Cursors.Default;
+            }
         }
 
         /// <summary>整窗重绘一遍：标题栏与外壳各自先清面再画前景</summary>

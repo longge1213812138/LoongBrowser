@@ -33,8 +33,12 @@ _Avoid_: 毛玻璃, 磨砂, 透明
 _Avoid_: Vista 玻璃, DWM 模糊, blur behind, SetWindowCompositionAttribute
 
 **Resize Band**:
-无边框窗口四周那圈 6px 的边带；它同时是拖拽缩放的热区与玻璃区，内容控件一律缩在它内侧。
+无边框窗口四周那圈 6px 的边带；它同时是拖拽缩放的热区与玻璃区，内容控件一律缩在它内侧。缩放在托管代码里自己实现，不依赖系统缩放。
 _Avoid_: 边框, 描边, 拖拽边
+
+**Glass Persistence**:
+玻璃在窗口失活后仍然存在。任何会让 DWM 在失活时停用 Acrylic 的窗口样式（尤其是 `WS_THICKFRAME`）都与它互斥。
+_Avoid_: 玻璃常开, 不降级
 
 **Surface Clear**:
 每个绘制帧开始时把整块绘制面擦回透明（`PatBlt(BLACKNESS)`），让玻璃重新透出；少了它，旧位置的外壳元素会留在窗口上。
