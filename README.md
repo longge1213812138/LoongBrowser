@@ -134,8 +134,10 @@ powershell -ExecutionPolicy Bypass -File build.ps1
 | 缩放逻辑（单元） | `powershell -File tests\run_zoom_test.ps1` | 50%~200% 区间约束、1% 归一化、步进与两端封死、预设档位、`Ctrl+=/-/0` 与 `Ctrl+滚轮` 的判定（不误伤 `Ctrl+C`/`Ctrl+Shift+D`） | 74 |
 | 网页缩放（端到端） | `powershell -File tests\run_zoom_e2e.ps1` | 真实内核 + 真实 `TabManager`：比例真的写进内核、两端封顶、新标签页继承会话比例、换页不丢、按屏幕坐标命中标签且不影响隐藏标签 | 29 |
 | F11 轻量全屏（端到端） | `powershell -File tests\run_fullscreen_e2e.ps1` | 真实窗口结构 + 真实内核：进出后菜单/工具栏/窗口状态原样还原、标签栏与标题栏保留、页面内 F11 转发链（注入脚本 → postMessage → 切换）、与视频真全屏共存不串状态 | 38 |
+| 玻璃外壳（回归） | `powershell -File tests\run_glass_test.ps1` | 外壳/标题栏每帧先清面再画前景（窗口变窄不留旧地址栏）、绘制前布局定稿、`GlassManager.Apply` 幂等、玻璃必须显示后再应用（不在构造函数里）、清面后整块重画不被失效矩形裁剪 | 9 |
+| 外壳渲染（截图） | `powershell -File tests\run_chrome_preview.ps1` | 字体/字号/纯黑文字、布局与命中矩形、玻璃区每帧清面且不铺底色、前景文字与图标确实画出；输出 `tests\chrome_preview*.png` 供人工核对 | 24 |
 
-运行结果写入 `tests\*_log.txt`。合计 **340** 项用例。
+运行结果写入 `tests\*_log.txt`。合计 **373** 项用例。
 
 ---
 

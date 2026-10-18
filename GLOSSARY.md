@@ -32,6 +32,14 @@ _Avoid_: 毛玻璃, 磨砂, 透明
 本项目实际采用的玻璃实现：Win11 22H2+ 的 `DWMWA_SYSTEMBACKDROP_TYPE` 配合 `DwmExtendFrameIntoClientArea`。
 _Avoid_: Vista 玻璃, DWM 模糊, blur behind, SetWindowCompositionAttribute
 
+**Surface Clear**:
+每个绘制帧开始时把整块绘制面擦回透明（`PatBlt(BLACKNESS)`），让玻璃重新透出；少了它，旧位置的外壳元素会留在窗口上。
+_Avoid_: 清屏, 重绘, 刷新
+
+**Glass Timing**:
+玻璃必须在窗口可见之后才应用（`MainForm.OnShown`）；可见之前设的材质会被窗口创建的后续流程覆盖。
+_Avoid_: 初始化玻璃, 启动玻璃
+
 **Aero Glass**:
 Vista/Win7 的原生组合器玻璃；本项目不实现，仅作视觉参照。
 _Avoid_: 用它称呼本项目当前的玻璃效果

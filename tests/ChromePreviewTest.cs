@@ -210,8 +210,13 @@ namespace LoongBrowser
                 }
 
                 // D-2 可读版合成：先铺"模拟桌面/亚克力"底色，再逐控件 WM_PRINT 叠加。
-                //     未绘制的玻璃区保留底色，因此黑字与 1px 阴影都能看清。
+                //     生产路径的清面是 PatBlt(BLACKNESS)（黑色＝透明），黑色在离屏图上无法
+                //     与前景笔画区分，所以这里换成一个可辨认的标记色，合图时再把标记色
+                //     换回模拟桌面 —— 等价于 DWM 合成层。
                 bool shotOk = false, zoomOk = false, labOk = false;
+                Color glassMark = Color.FromArgb(1, 2, 3);
+                try
+                {
                 using (var canvas = MakeBackdrop(FormW, FormH))
                 {
                     using (var reference = new Bitmap(canvas))
@@ -219,26 +224,36 @@ namespace LoongBrowser
                         using (var g = Graphics.FromImage(canvas))
                         {
                             g.SmoothingMode = SmoothingMode.AntiAlias;
+                            GlassManager.PreviewClearColor = glassMark;   // 玻璃区改画标记色，便于合图时还原
                             PrintTo(g, titleBar, 0, 0);
                             PrintTo(g, chrome, 0, titleBar.Height);
                             PrintTo(g, tabs, 0, ChromeTotal);
+                            GlassManager.PreviewClearColor = Color.Empty;
                         }
 
-                        canvas.Save(shot, ImageFormat.Png);
-                        shotOk = File.Exists(shot);
-
-                        // 玻璃区没有铺不透明底色 → 该点的像素与"只有模拟桌面"的参考图一致
+                        // 玻璃区在 WM_PRINT 之后是清面标记色（生产路径为 PatBlt 的纯黑）：
+                        // 这就是"每帧先把绘制面清成透明，再画前景"的结果。
                         Color glassPixel = canvas.GetPixel(FormW - 10, titleBar.Height + 8);
-                        Color refPixel = reference.GetPixel(FormW - 10, titleBar.Height + 8);
-                        Judge("D2 玻璃区不铺底色（像素与模拟桌面底色一致 → 真实运行由 Acrylic 透出）",
-                              glassPixel.ToArgb() == refPixel.ToArgb(),
-                              "合成图 " + glassPixel + " vs 参考图 " + refPixel);
+                        Judge("D2a 玻璃区每帧先清面（WM_PRINT 后只剩清面标记，未被前景覆盖）",
+                              glassPixel.ToArgb() == glassMark.ToArgb(),
+                              "实际 " + glassPixel);
 
                         // 文字真的画进图里了：数一下各条带的暗像素
                         int menuDark = CountDark(canvas, new Rectangle(0, titleBar.Height, 800, VistaTheme.MenuBarHeight), 90);
                         int tabDark = CountDark(canvas, new Rectangle(0, titleBar.Height + VistaTheme.MenuBarHeight + VistaTheme.ToolBarHeight,
                                                                      FormW, TabStrip.TabHeight), 90);
                         int titleDark = CountDark(canvas, new Rectangle(0, 0, FormW - VistaTheme.CaptionButtonWidth * 3, titleBar.Height), 90);
+
+                        // 按 DWM 的语义合成：标记色像素＝透出背后的模拟桌面
+                        ComposeGlass(canvas, reference, glassMark);
+                        Color composed = canvas.GetPixel(FormW - 10, titleBar.Height + 8);
+                        Color refPixel = reference.GetPixel(FormW - 10, titleBar.Height + 8);
+                        Judge("D2b 清面处按 DWM 语义合成后与模拟桌面底色一致（玻璃透出）",
+                              composed.ToArgb() == refPixel.ToArgb(),
+                              "合成图 " + composed + " vs 参考图 " + refPixel);
+
+                        canvas.Save(shot, ImageFormat.Png);
+                        shotOk = File.Exists(shot);
                         bool menusLaidOut = true;
                         for (int i = 0; i < menus.Count; i++)
                             if (menus[i].LayoutRect.Width <= 0) menusLaidOut = false;
@@ -252,6 +267,11 @@ namespace LoongBrowser
                         SaveZoom(canvas, new Rectangle(0, 0, FormW, ChromeTotal + 8), 2, zoomShot);
                         zoomOk = File.Exists(zoomShot);
                     }
+                }
+                }
+                finally
+                {
+                    GlassManager.PreviewClearColor = Color.Empty;   // 生产路径恢复 PatBlt
                 }
                 Judge("D7 已输出外壳合成截图 chrome_preview.png", shotOk, shot);
                 Judge("D8 已输出 2 倍放大图 chrome_preview_zoom.png（核对字形与阴影）", zoomOk, zoomShot);
@@ -369,6 +389,23 @@ namespace LoongBrowser
         }
 
         // ---------- 合成与像素工具 ----------
+
+        /// <summary>
+        /// 按 DWM 的语义把"清成透明"的像素还原成背后的模拟桌面：
+        /// 扩展边框后的客户区里，纯黑（PatBlt BLACKNESS 的结果）表示该处没有前景，
+        /// 真实运行时由 Acrylic 合成层填充。测试里用参考图（同一张模拟桌面）填回去，
+        /// 如此才能同时核对"玻璃区确实被清空"与"前景元素照常画出"。
+        /// </summary>
+        private static void ComposeGlass(Bitmap canvas, Bitmap backdrop, Color mark)
+        {
+            for (int y = 0; y < canvas.Height; y++)
+                for (int x = 0; x < canvas.Width; x++)
+                {
+                    Color c = canvas.GetPixel(x, y);
+                    if (c.ToArgb() != mark.ToArgb()) continue;
+                    canvas.SetPixel(x, y, backdrop.GetPixel(x, y));
+                }
+        }
 
         /// <summary>模拟桌面/亚克力底色：真实运行时这一层由 DWM 合成，测试里用浅蓝渐变代替。</summary>
         private static Bitmap MakeBackdrop(int w, int h)
@@ -569,6 +606,25 @@ namespace LoongBrowser
             for (int y = y0; y < y1; y++)
                 for (int x = x0; x < x1; x++)
                     if (Lum(bmp.GetPixel(x, y)) <= maxLum) n++;
+            return n;
+        }
+
+        /// <summary>
+        /// 统计"墨迹灰阶"像素（亮度 1..254）。
+        /// 清面把玻璃区写成纯黑，前景文字/图标留下的是纯黑笔画与其抗锯齿灰阶；
+        /// 纯黑无法与清面区分，灰阶可以 —— 用它判断前景元素真的画上去了。
+        /// </summary>
+        private static int CountInk(Bitmap bmp, Rectangle r)
+        {
+            int n = 0;
+            int x0 = Math.Max(0, r.Left), x1 = Math.Min(bmp.Width, r.Right);
+            int y0 = Math.Max(0, r.Top), y1 = Math.Min(bmp.Height, r.Bottom);
+            for (int y = y0; y < y1; y++)
+                for (int x = x0; x < x1; x++)
+                {
+                    int l = Lum(bmp.GetPixel(x, y));
+                    if (l >= 1 && l <= 254) n++;
+                }
             return n;
         }
 

@@ -149,6 +149,9 @@ namespace LoongBrowser
             Invalidate();
         }
 
+        /// <summary>地址栏矩形（最近一次布局的结果，供命中测试与诊断查询）</summary>
+        public Rectangle AddressBounds { get { return _addressRect; } }
+
         // ---------- 布局 ----------
 
         private void Relayout()
@@ -183,6 +186,7 @@ namespace LoongBrowser
         {
             base.OnResize(e);
             Relayout();
+            Invalidate();
         }
 
         /// <summary>重算工具按钮位置，返回地址栏左侧起点</summary>
@@ -219,8 +223,17 @@ namespace LoongBrowser
         protected override void OnPaint(PaintEventArgs e)
         {
             Graphics g = e.Graphics;
+
+            // 先把整块绘制面擦回透明（玻璃），再画前景。
+            // 少了这一步，改写窄之后旧位置的白条会一直留在窗口表面 —— 见 GlassManager.ClearSurface。
+            GlassManager.ClearSurface(g, Width, Height);
+
             g.SmoothingMode = SmoothingMode.AntiAlias;
 
+            // 布局必须在绘制之前定稿：DrawToolBar 会按宽度重算地址栏矩形，
+            // 若拖到绘制中途才挪 TextBox，控件移动产生的重绘会插在前后两层之间，
+            // 留下一块没被前景覆盖、也没被擦干净的区域。
+            Relayout();
             if (_menuBarRect.Height > 0) DrawMenuBar(g);
             if (_toolBarRect.Height > 0) DrawToolBar(g);
             if (_tabHeaderRect.Height > 0) DrawTabHeader(g);
@@ -286,8 +299,9 @@ namespace LoongBrowser
                     _addressFocused ? VistaTheme.AccentBlue : VistaTheme.SurfaceBorder, 5);
 
                 int pad = 7;
-                _addressBox.Bounds = new Rectangle(_addressRect.X + pad, _addressRect.Y + 3,
+                var boxBounds = new Rectangle(_addressRect.X + pad, _addressRect.Y + 3,
                     Math.Max(40, _addressRect.Width - pad * 2), _addressRect.Height - 6);
+                if (_addressBox.Bounds != boxBounds) _addressBox.Bounds = boxBounds;
                 _addressBox.Visible = true;
             }
             else

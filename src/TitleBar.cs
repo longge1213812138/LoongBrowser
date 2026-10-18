@@ -86,6 +86,11 @@ namespace LoongBrowser
         protected override void OnPaint(PaintEventArgs e)
         {
             Graphics g = e.Graphics;
+
+            // 与 GlassChrome 同一套规则：先清面露出玻璃，再画前景。
+            // 否则窗口变窄后，旧宽度上的标题栏内容会留在窗口表面。
+            GlassManager.ClearSurface(g, Width, Height);
+
             g.SmoothingMode = SmoothingMode.AntiAlias;
 
             var full = new Rectangle(0, 0, Width, Height);

@@ -116,9 +116,34 @@ namespace LoongBrowser
             RefreshZoomUi();
             Application.AddMessageFilter(this);
 
-            // 玻璃层：句柄可用后把 Acrylic 模糊应用到窗口
-            // （见 docs/adr/0001-use-acrylic-instead-of-aero-glass.md）
+            // 玻璃层不在这里应用：窗口可见之前的 backdrop 会被窗口创建的后续流程覆盖，
+            // 首帧仍然是不透明的一块（实测见 GlassManager 顶部注释）。改到 OnShown。
+        }
+
+        /// <summary>窗口已显示且首帧画完：此刻应用 Acrylic 才能一出现就是玻璃</summary>
+        protected override void OnShown(EventArgs e)
+        {
+            base.OnShown(e);
+
+            // 见 docs/adr/0001-use-acrylic-instead-of-aero-glass.md
             GlassManager.Apply(Handle, false);
+            ApplyGlassToSurface();
+
+            // 尺寸变化后整窗重绘：玻璃区的像素只能靠"清回透明"来更新，
+            // 不重画的话旧宽度上的地址栏白条会留在窗口表面。
+            ResizeEnd += delegate { ApplyGlassToSurface(); };
+            SizeChanged += delegate
+            {
+                if (WindowState != FormWindowState.Minimized) BeginInvoke(new Action(ApplyGlassToSurface));
+            };
+        }
+
+        /// <summary>整窗重绘一遍：标题栏与外壳各自先清面再画前景</summary>
+        private void ApplyGlassToSurface()
+        {
+            if (IsDisposed) return;
+            Invalidate(true);
+            Update();
         }
 
         // ---------- 玻璃层 ----------
