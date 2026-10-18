@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- 方案 C：折角书页 + 搜索环 · 强调"极简/阅读"，圆角与外壳 Radius=8 语言一致 -->
+  <rect width="512" height="512" rx="112" fill="#F4F7FA"/>
+  <!-- 页面 -->
+  <path d="M150 118 H322 L386 182 V394 H150 Z" fill="#1E63A8"/>
+  <!-- 折角 -->
+  <path d="M322 118 L386 182 H322 Z" fill="#7AA8D8"/>
+  <!-- 书行 -->
+  <rect x="196" y="228" width="144" height="20" rx="10" fill="#F4F7FA"/>
+  <rect x="196" y="276" width="112" height="20" rx="10" fill="#F4F7FA" opacity="0.75"/>
+  <rect x="196" y="324" width="128" height="20" rx="10" fill="#F4F7FA" opacity="0.5"/>
+</svg>

@@ -29,3 +29,7 @@ status_tmp.txt
 # test scratch output (compiled test exe + WebView2 throwaway profile)
 tests/_out*/
 tests/*_log.txt
+
+# icon tooling scratch (regenerable via icons/_make_ico.py)
+icons/_ico_preview.png
+icons/preview.png

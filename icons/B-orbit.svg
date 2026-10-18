@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- 方案 B：行星环 · 球体 + 环绕轨道，取"连接世界/环游"之意
+       选它替代龙首：具象龙首在 32px 下必然糊，环+球在任意尺寸都站得住 -->
+  <rect width="512" height="512" rx="112" fill="#13355C"/>
+
+  <!-- 球体 -->
+  <circle cx="256" cy="256" r="104" fill="#7AA8D8"/>
+
+  <!-- 球体上的高光带（扁平化的明暗分层，不用渐变） -->
+  <path d="M256 152 A104 104 0 0 0 256 360 A84 104 0 0 1 256 152 Z" fill="#9DC0E4" opacity="0.55"/>
+
+  <!-- 轨道环：一个倾斜的椭圆，后半段压暗形成穿插感 -->
+  <ellipse cx="256" cy="256" rx="188" ry="66" fill="none" stroke="#FFFFFF" stroke-width="26"
+           transform="rotate(-24 256 256)"/>
+  <!-- 环的"前景"段：盖住球体下缘，制造轨道从球前穿过的错觉 -->
+  <path d="M96 300 C140 350 372 350 416 300"
+        fill="none" stroke="#FFFFFF" stroke-width="26" stroke-linecap="round"
+        transform="rotate(-24 256 256)"/>
+
+  <!-- 环上的小卫星点 -->
+  <circle cx="410" cy="196" r="20" fill="#FFFFFF"/>
+</svg>

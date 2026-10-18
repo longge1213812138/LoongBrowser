@@ -78,6 +78,15 @@ $appSrc = Get-ChildItem (Join-Path $root "src") -Filter *.cs |
 
 $appArgs = @("/nologo", "/target:winexe", "/codepage:65001", "/optimize+", ("/out:" + (Join-Path $dist "LoongBrowser.exe")))
 if ($useRoslyn) { $appArgs += "/langversion:latest" }
+# Application icon: Win32 resource baked into the exe by csc itself (/win32icon).
+# No .resx / .rc / resource files are introduced, so the "zero resource files"
+# and "no third-party dependency" constraints still hold.
+$appIcon = Join-Path $root "icons\LoongBrowser.ico"
+if (Test-Path $appIcon) {
+    $appArgs += ("/win32icon:" + $appIcon)
+} else {
+    Write-Output "WARN: icons\LoongBrowser.ico not found - the exe will fall back to the default icon"
+}
 foreach ($r in $appRefs) { $appArgs += ("/r:" + $r) }
 foreach ($s in $appSrc) { $appArgs += $s }
 
@@ -93,6 +102,9 @@ $insSrc = Join-Path $root "src\Installer.cs"
 $insRefs = @("System.Windows.Forms.dll", "System.Drawing.dll", "Microsoft.CSharp.dll")
 $insArgs = @("/nologo", "/target:winexe", "/codepage:65001", "/optimize+", ("/out:" + (Join-Path $dist "LoongBrowserSetup.exe")))
 if ($useRoslyn) { $insArgs += "/langversion:latest" }
+# The installer gets the same icon: file managers and Add/Remove Programs show
+# LoongBrowserSetup.exe's own icon, and the installer also writes DisplayIcon.
+if (Test-Path $appIcon) { $insArgs += ("/win32icon:" + $appIcon) }
 foreach ($r in $insRefs) { $insArgs += ("/r:" + $r) }
 $insArgs += $insSrc
 

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- 方案 F：标签页 + 地球 · 把"多标签浏览"直接画成图形 -->
+  <rect width="512" height="512" rx="112" fill="#0F2B4A"/>
+  <!-- 后层标签 -->
+  <rect x="150" y="118" width="248" height="176" rx="40" fill="#2C5F94"/>
+  <!-- 前层标签 -->
+  <rect x="114" y="196" width="284" height="200" rx="40" fill="#FFFFFF"/>
+  <!-- 地球 -->
+  <circle cx="256" cy="296" r="64" fill="none" stroke="#1E63A8" stroke-width="20"/>
+  <line x1="192" y1="296" x2="320" y2="296" stroke="#1E63A8" stroke-width="20" stroke-linecap="round"/>
+  <ellipse cx="256" cy="296" rx="30" ry="64" fill="none" stroke="#1E63A8" stroke-width="20"/>
+</svg>

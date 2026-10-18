@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- 方案 D：极简「圆 + 缺口」罗盘环 · 纯几何，小尺寸最清晰 -->
+  <rect width="512" height="512" rx="112" fill="#FFFFFF"/>
+  <circle cx="256" cy="256" r="128" fill="none" stroke="#1E63A8" stroke-width="40"/>
+  <!-- 缺口用底色调开 -->
+  <path d="M256 84 A172 172 0 0 1 384 128" fill="none" stroke="#FFFFFF" stroke-width="56"/>
+  <!-- 指针 -->
+  <path d="M256 168 L300 256 L256 344 L212 256 Z" fill="#1E63A8"/>
+  <circle cx="256" cy="256" r="22" fill="#FFFFFF"/>
+</svg>
