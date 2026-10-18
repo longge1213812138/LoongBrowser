@@ -410,7 +410,7 @@ namespace LoongBrowser
                 if (v != null && v.CoreWebView2 != null) v.CoreWebView2.Reload();
             }));
             list.Add(SeparatorButton());
-            list.Add(ChromeToolButton("copy", "复制地址栏内容到剪贴板", delegate
+            list.Add(ChromeToolButton("copy", "复制地址", delegate
             {
                 string text = _chrome.AddressText;
                 if (!string.IsNullOrEmpty(text))
@@ -418,7 +418,7 @@ namespace LoongBrowser
                     try { Clipboard.SetText(text); } catch (Exception) { }
                 }
             }));
-            list.Add(ChromeToolButton("paste", "从剪贴板粘贴到地址栏", delegate
+            list.Add(ChromeToolButton("paste", "粘贴", delegate
             {
                 try
                 {
@@ -433,10 +433,9 @@ namespace LoongBrowser
             }));
             list.Add(SeparatorButton());
             list.Add(ChromeToolButton("star", "收藏本页", delegate { AddBookmark(); }));
-            list.Add(ChromeToolButton("translate", "翻译选中文字或当前页面", delegate { TranslateSelectedText(); }));
+            list.Add(ChromeToolButton("translate", "翻译", delegate { TranslateSelectedText(); }));
             list.Add(SeparatorButton());
-            list.Add(ChromeToolButton("zoom", "网页缩放 50%~200%（Ctrl + 加/减键，或 Ctrl + 滚轮）",
-                delegate { OpenZoomMenu(); }));
+            list.Add(ChromeToolButton("zoom", "网页缩放", delegate { OpenZoomMenu(); }));
             list.Add(SeparatorButton());
             list.Add(ChromeToolButton("plus", "新标签", delegate { _tabMgr.NewTab(null); }));
             list.Add(ChromeToolButton("close", "关闭当前标签", delegate { _tabMgr.CloseCurrent(); }));

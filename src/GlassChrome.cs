@@ -55,6 +55,15 @@ namespace LoongBrowser
         private readonly List<Rectangle> _buttonRects = new List<Rectangle>();
         private int _hotButton = -1;
 
+        // ---------- 悬停提示（1 秒后显示按钮名字） ----------
+        /// <summary>悬停多久后弹出提示</summary>
+        public const int TooltipDelayMs = 1000;
+        private readonly Timer _tooltipTimer;
+        private readonly Timer _tooltipWatch;         // 提示显示期间的低频守望：负责"真的移开了就收起"
+        private ChromeTooltip _tooltip;               // 懒创建：多数会话根本不会悬停这么久
+        private int _tooltipButton = -1;              // 当前已显示提示的按钮（-1 = 未显示）
+        private string _tooltipText = "";
+
         // ---------- 地址栏 ----------
         private readonly TextBox _addressBox;
         private bool _addressFocused;
@@ -83,6 +92,16 @@ namespace LoongBrowser
             ToolBarVisible = true;
             TabHeaderVisible = true;
 
+            // 悬停 1 秒才弹名字：快速扫过一排按钮时不该有提示闪出来
+            _tooltipTimer = new Timer();
+            _tooltipTimer.Interval = TooltipDelayMs;
+            _tooltipTimer.Tick += delegate { ShowTooltipForHotButton(); };
+
+            // 提示窗盖住按钮后收不到 WM_MOUSEMOVE，只能低频轮询鼠标是否还在热点上
+            _tooltipWatch = new Timer();
+            _tooltipWatch.Interval = 150;
+            _tooltipWatch.Tick += delegate { WatchTooltip(); };
+
             _addressBox = new TextBox();
             _addressBox.BorderStyle = BorderStyle.None;
             _addressBox.Font = VistaTheme.UIFont;
@@ -93,6 +112,18 @@ namespace LoongBrowser
             _addressBox.GotFocus += delegate { _addressFocused = true; Invalidate(); };
             _addressBox.LostFocus += delegate { _addressFocused = false; Invalidate(); };
             Controls.Add(_addressBox);
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                try { _tooltipTimer.Stop(); _tooltipTimer.Dispose(); } catch (Exception) { }
+                try { if (_tooltipWatch != null) { _tooltipWatch.Stop(); _tooltipWatch.Dispose(); } } catch (Exception) { }
+                try { if (_tooltip != null && !_tooltip.IsDisposed) _tooltip.Dispose(); } catch (Exception) { }
+                _tooltip = null;
+            }
+            base.Dispose(disposing);
         }
 
         /// <summary>地址栏文本框（供外部读写、获取焦点）</summary>
@@ -139,6 +170,7 @@ namespace LoongBrowser
         {
             _buttons.Clear();
             if (buttons != null) _buttons.AddRange(buttons);
+            HideTooltip();
             Invalidate();
         }
 
@@ -427,11 +459,13 @@ namespace LoongBrowser
 
             if (menu != _hotMenu || button != _hotButton || tab != _hotTab || newHotClose != _hotClose)
             {
+                bool buttonChanged = button != _hotButton;
                 _hotMenu = menu;
                 _hotButton = button;
                 _hotTab = tab;
                 _hotClose = newHotClose;
                 Cursor = (button >= 0 || menu >= 0 || newHotClose >= 0) ? Cursors.Hand : Cursors.Default;
+                if (buttonChanged) OnHotButtonChanged(button);
                 Invalidate();
             }
         }
@@ -439,18 +473,166 @@ namespace LoongBrowser
         protected override void OnMouseLeave(EventArgs e)
         {
             base.OnMouseLeave(e);
+
+            // 提示窗就压在按钮上：它一出现，鼠标所在窗口就从本控件变成提示窗，
+            // 系统随即送来 WM_MOUSELEAVE。若不忽略，提示会被自己"赶走"，
+            // 表现为"到点闪一下就消失"（实测探针：tick → hide(was 0)）。
+            if (_tooltip != null && !_tooltip.IsDisposed && _tooltip.Visible) return;
+
             _hotMenu = -1;
             _hotButton = -1;
             _hotTab = -1;
             _hotClose = -1;
             Cursor = Cursors.Default;
+            HideTooltip();
             Invalidate();
+        }
+
+        // ---------- 悬停提示 ----------
+
+        /// <summary>鼠标换到另一个按钮：立刻收起旧提示，重新开始 1 秒计时</summary>
+        private void OnHotButtonChanged(int button)
+        {
+            HideTooltip();
+            _tooltipTimer.Stop();
+            if (button < 0) return;
+            if (string.IsNullOrEmpty(ButtonTooltip(button))) return;
+            _tooltipTimer.Start();
+        }
+
+        private string ButtonTooltip(int index)
+        {
+            if (index < 0 || index >= _buttons.Count) return "";
+            ChromeToolButton b = _buttons[index];
+            if (b == null || b.Separator) return "";
+            return b.Tooltip ?? "";
+        }
+
+        /// <summary>计时到点：在按钮下方弹出提示</summary>
+        private void ShowTooltipForHotButton()
+        {
+            _tooltipTimer.Stop();
+            int index = _hotButton;
+            string text = ButtonTooltip(index);
+            if (index < 0 || text.Length == 0 || !IsHandleCreated) return;
+
+            if (_tooltip == null || _tooltip.IsDisposed) _tooltip = new ChromeTooltip();
+
+            _tooltipButton = index;
+            _tooltipText = text;
+            _tooltip.ShowText(text, TooltipLocation(index, text));
+            _tooltipWatch.Start();
+        }
+
+        /// <summary>
+        /// 提示显示期间的守望：鼠标是否仍落在同一个按钮上。
+        /// </summary>
+        /// <remarks>
+        /// 提示窗压在按钮上，本控件收不到那段时间的鼠标消息，只能主动问光标位置。
+        /// 一旦离开该按钮（或离开本控件），立刻收起。
+        /// </remarks>
+        private void WatchTooltip()
+        {
+            if (_tooltipButton < 0)
+            {
+                _tooltipWatch.Stop();
+                return;
+            }
+            if (_tooltip == null || _tooltip.IsDisposed || !_tooltip.Visible)
+            {
+                _tooltipWatch.Stop();
+                return;
+            }
+
+            Point client;
+            try { client = PointToClient(Cursor.Position); }
+            catch (Exception) { HideTooltip(); _tooltipWatch.Stop(); return; }
+
+            // 只负责收起提示；_hotButton 的归属交给 OnMouseMove ——
+            // 在这里改它会让 OnMouseMove 以为"按钮没变"，于是不再重新计时，
+            // 鼠标从一个按钮滑到另一个按钮就再也弹不出提示（实测）。
+            if (!ClientRectangle.Contains(client) || ButtonHitTest(client) != _tooltipButton)
+            {
+                HideTooltip();
+                _tooltipWatch.Stop();
+            }
+        }
+
+        /// <summary>
+        /// 提示的屏幕位置：以按钮为中心水平居中，竖直压在**工具栏内部**。
+        /// </summary>
+        /// <remarks>
+        /// 提示不能越出工具栏：往上会盖住菜单栏（实测"刷新"糊住了"书签(B)"），
+        /// 往下会盖住标签条标题。工具栏高 36px、提示高 23px，竖直居中即可完全落在里面
+        /// —— 代价是遮住按钮自身一小会儿，但那是鼠标正停着的地方，可接受。
+        /// </remarks>
+        public Point TooltipLocation(int index, string text)
+        {
+            Size size = ChromeTooltip.Measure(text, VistaTheme.UIFont);
+            Rectangle btn = (index >= 0 && index < _buttonRects.Count)
+                ? _buttonRects[index]
+                : new Rectangle(Width / 2, _toolBarRect.Top, 1, 1);
+
+            // 放在按钮右侧、不压住按钮本身：提示盖住按钮会触发 WM_MOUSELEAVE，
+            // 得靠守望定时器兜底，体验上也不如"旁边浮出来"自然。
+            int left = btn.Right + 4;
+            // 右侧放不下就翻到左侧
+            if (left + size.Width > Width - 2) left = btn.X - size.Width - 4;
+            // 竖直居中于工具栏，并保证整块落在工具栏内
+            int top = _toolBarRect.Top + (_toolBarRect.Height - size.Height) / 2;
+            int minTop = _toolBarRect.Top + 1;
+            int maxTop = _toolBarRect.Bottom - size.Height - 1;
+            if (maxTop < minTop) maxTop = minTop;
+            top = Math.Max(minTop, Math.Min(top, maxTop));
+            // 不越出本控件左右边界
+            if (Width > 0) left = Math.Max(2, Math.Min(left, Width - size.Width - 2));
+            Point p = PointToScreen(new Point(left, top));
+            // 不越出屏幕工作区
+            Rectangle wa = Screen.FromControl(this).WorkingArea;
+            if (p.X + size.Width > wa.Right) p.X = wa.Right - size.Width;
+            if (p.Y + size.Height > wa.Bottom) p.Y = wa.Bottom - size.Height;
+            if (p.X < wa.Left) p.X = wa.Left;
+            return p;
+        }
+
+        private void HideTooltip()
+        {
+            _tooltipTimer.Stop();
+            _tooltipButton = -1;
+            _tooltipText = "";
+            if (_tooltip != null && !_tooltip.IsDisposed && _tooltip.Visible) _tooltip.Hide();
+            if (_tooltipWatch != null) _tooltipWatch.Stop();
+        }
+
+        /// <summary>正在显示的提示文字（供测试与诊断查询）</summary>
+        public string VisibleTooltip
+        {
+            get { return _tooltipButton >= 0 ? _tooltipText : ""; }
+        }
+
+        /// <summary>提示窗当前是否真的可见（供测试与诊断查询）</summary>
+        public bool TooltipVisible
+        {
+            get { return _tooltip != null && !_tooltip.IsDisposed && _tooltip.Visible; }
+        }
+
+        /// <summary>提示窗在屏幕上的矩形（未显示时为空）</summary>
+        public Rectangle TooltipScreenBounds
+        {
+            get
+            {
+                if (_tooltip == null || _tooltip.IsDisposed || !_tooltip.Visible) return Rectangle.Empty;
+                return _tooltip.Bounds;
+            }
         }
 
         protected override void OnMouseDown(MouseEventArgs e)
         {
             base.OnMouseDown(e);
             if (e.Button != MouseButtons.Left) return;
+
+            // 点了就不再挂着提示（菜单/下拉会接管后续交互）
+            HideTooltip();
 
             int menu = MenuHitTest(e.Location);
             if (menu >= 0) { OpenMenu(menu); return; }
