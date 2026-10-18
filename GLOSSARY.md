@@ -32,6 +32,10 @@ _Avoid_: 毛玻璃, 磨砂, 透明
 本项目实际采用的玻璃实现：Win11 22H2+ 的 `DWMWA_SYSTEMBACKDROP_TYPE` 配合 `DwmExtendFrameIntoClientArea`。
 _Avoid_: Vista 玻璃, DWM 模糊, blur behind, SetWindowCompositionAttribute
 
+**Resize Band**:
+无边框窗口四周那圈 6px 的边带；它同时是拖拽缩放的热区与玻璃区，内容控件一律缩在它内侧。
+_Avoid_: 边框, 描边, 拖拽边
+
 **Surface Clear**:
 每个绘制帧开始时把整块绘制面擦回透明（`PatBlt(BLACKNESS)`），让玻璃重新透出；少了它，旧位置的外壳元素会留在窗口上。
 _Avoid_: 清屏, 重绘, 刷新

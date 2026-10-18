@@ -1,6 +1,6 @@
 # PROJECT_STATE — LoongBrowser 交接材料
 
-> 更新：2026-10-19 00:40 ｜ 状态：**玻璃时机与残影已修，待用户实机确认**
+> 更新：2026-10-19 00:55 ｜ 状态：**玻璃瑕疵与边缘缩放已实现，待用户实机确认**
 > 工作目录：`C:\Users\91533\Desktop\LoongBrowser-master` ｜ 分支：`main` ｜ HEAD：`4eec1c2`
 > 权威资料：功能描述以 `README.md` 为准；本文档只记"接手需要知道、README 没写"的事。
 
@@ -38,6 +38,23 @@ LoongBrowser：极简 Windows 桌面浏览器（WebView2/Chromium 内核 + C# Wi
 测试：新增 `tests\run_glass_test.ps1`（9 项不变量），并改造 `ChromePreviewTest` 的清面断言（24 项）。两者都不依赖 DWM 合成层。
 
 **验证方式（本机）**：桌面是纯灰壁纸，玻璃在纯色下不可辨。验证玻璃本身要用彩色条纹背板（临时程序，未入库）：全屏无边框窗口画红/黄/蓝条纹置于底层，再启动 exe，截图看标题栏是否透出模糊色块。已确认启动首帧、最大化、缩小、连续拖动缩放、F11 进出、最小化还原后均正常。
+
+## 二·六、未提交：无边框窗口的边缘缩放（2026-10-19）
+
+`FormBorderStyle.None` 的窗口没有系统缩放边框，补了一整套（详见 ADR-0007）：
+
+| 关键点 | 做法 |
+| --- | --- |
+| 系统才会执行缩放 | `CreateParams` 补 `WS_THICKFRAME` |
+| 补了样式后客户区被挤 | `WM_NCCALCSIZE` 归零，客户区重新等于窗口矩形 |
+| 谁来做命中测试 | **必须是 Form**：子控件返回 `HT*` 或 `HTTRANSPARENT` 都无法触发缩放循环（实测六向全失败） |
+| 怎么让鼠标落到 Form | `MainForm.Padding = 6px`，标题栏/外壳/标签容器全部缩在边带以内 |
+| 边带长什么样 | 就是玻璃本身：只清面不铺色，补两条 1px 边缘线 |
+| 最大化溢出工作区 | `WM_GETMINMAXINFO` 把最大化矩形与最大跟踪尺寸钉到监视区工作区 |
+| 最大化→还原多出 14px | 记下最大化前矩形，还原后用 `BeginInvoke` 钉回（系统会连发两次 Resize，第二次才撑大） |
+| 拖拽缩放绕过 MinimumSize | 自己把 `MinimumSize` 写进 `ptMinTrackSize`（WinForms 在 Form.WndProc 之后才填，那时还是 136×39） |
+
+测试：`tests\run_resize_test.ps1`（27 项，无真实鼠标注入，靠命中测试与窗口状态断言）。
 
 ## 三、本机环境注意事项（重要，接手必读）
 

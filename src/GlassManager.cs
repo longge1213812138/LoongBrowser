@@ -149,7 +149,13 @@ namespace LoongBrowser
         /// </remarks>
         public static void ClearSurface(Graphics g, int width, int height)
         {
-            if (g == null || width <= 0 || height <= 0) return;
+            ClearSurface(g, new Rectangle(0, 0, width, height));
+        }
+
+        /// <summary>把指定矩形清成"透明"（只清这一块时用，例如窗口四周的缩放边带）</summary>
+        public static void ClearSurface(Graphics g, Rectangle bounds)
+        {
+            if (g == null || bounds.Width <= 0 || bounds.Height <= 0) return;
             SurfaceClearCount++;
 
             Region saved = g.Clip;
@@ -157,18 +163,18 @@ namespace LoongBrowser
             try
             {
                 g.ResetClip();
-                // 清面是"整块"的，所以绘制也必须整块重来 —— 调用方紧接着要把整个控件
+                // 清面是"整块"的，所以绘制也必须整块重来 —— 调用方紧接着要把这一整块
                 // 重新画一遍。裁剪区就此放开、不再恢复：若仍按失效矩形裁剪，被清掉的
                 // 只会在失效矩形内重画，矩形外的前景（按钮、标题）会凭空消失。
                 if (PreviewClearColor != Color.Empty)
                 {
                     using (var brush = new SolidBrush(PreviewClearColor))
-                        g.FillRectangle(brush, 0, 0, width, height);
+                        g.FillRectangle(brush, bounds);
                 }
                 else
                 {
                     hdc = g.GetHdc();
-                    PatBlt(hdc, 0, 0, width, height, BLACKNESS);
+                    PatBlt(hdc, bounds.X, bounds.Y, bounds.Width, bounds.Height, BLACKNESS);
                 }
             }
             catch (Exception)

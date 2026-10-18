@@ -29,6 +29,14 @@ namespace LoongBrowser
         /// <summary>标题栏按钮宽度</summary>
         public const int CaptionButtonWidth = 46;
 
+        /// <summary>
+        /// 可拖拽缩放的边缘带宽（逻辑像素）。
+        /// 窗口是无边框的，系统不会提供缩放边框；这圈宽度由 Form 自己留出来
+        /// （Padding），既是命中区也是玻璃区 —— 见 docs/adr/0007-resize-border-band.md。
+        /// 6px 与系统 SM_CXSIZEFRAME 的观感相当，再窄会难以命中。
+        /// </summary>
+        public const int ResizeBorderWidth = 6;
+
         // ---------- 前景 ----------
         /// <summary>主文字色（纯黑；用户 2026-10 指定）</summary>
         public static readonly Color Text = Color.Black;
@@ -133,6 +141,25 @@ namespace LoongBrowser
                 g.DrawLine(pen, bounds.Left, bounds.Top, bounds.Right - 1, bounds.Top);
             using (var pen = new Pen(ShadowBottom, 1f))
                 g.DrawLine(pen, bounds.Left, bounds.Bottom - 1, bounds.Right - 1, bounds.Bottom - 1);
+        }
+
+        /// <summary>
+        /// 画窗口四周那圈缩放边带的边缘高光与阴影。
+        /// </summary>
+        /// <remarks>
+        /// 这一圈是玻璃（不铺底色），只画两条线：
+        ///   · 最外一圈 1px 白高光 —— 与外壳顶部高光同一条语言，让窗口有明确的边界；
+        ///   · 最外一圈 1px 深色内描边 —— 桌面背景很亮时，白高光单独存在会糊成一片。
+        /// 内部控件（标题栏、外壳、网页）各自已有上下边缘线，这里不再重复画。
+        /// </remarks>
+        public static void DrawResizeBand(Graphics g, Rectangle bounds)
+        {
+            if (g == null || bounds.Width <= 0 || bounds.Height <= 0) return;
+
+            using (var pen = new Pen(HighlightTop, 1f))
+                g.DrawRectangle(pen, bounds.Left, bounds.Top, bounds.Width - 1, bounds.Height - 1);
+            using (var pen = new Pen(ShadowBottom, 1f))
+                g.DrawRectangle(pen, bounds.Left + 1, bounds.Top + 1, bounds.Width - 3, bounds.Height - 3);
         }
 
         /// <summary>画一个不透明的圆角面板（地址栏胶囊、选中标签等）</summary>

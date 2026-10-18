@@ -41,6 +41,12 @@ namespace LoongBrowser
             Size = new Size(1100, 760);
             MinimumSize = new Size(700, 480);
 
+            // 无边框窗口没有系统缩放边框：自己留一圈 Padding 当拖拽热区。
+            // 这一圈同时就是玻璃 —— Form 的 OnPaint 只清面不铺色，Acrylic 直接透出。
+            // 内部控件全部缩在 Padding 以内，鼠标落在圈上时由 Form 作答 WM_NCHITTEST
+            // （子控件不能代替窗口发起缩放循环，见 docs/adr/0007-resize-border-band.md）。
+            Padding = new Padding(VistaTheme.ResizeBorderWidth);
+
             _bookmarks = new BookmarkStore();
             _downloads = new DownloadStore();
             _history = new HistoryStore();
@@ -49,6 +55,8 @@ namespace LoongBrowser
             TranslationService.LoadConfig();
 
             // 自绘标题栏：FormBorderStyle.None 后补回拖动、最大化、关闭
+            // Dock 的排列顺序：先加 Fill（标签容器），再加 Dock.Top（外壳、标题栏），
+            // 最后把它们整体挤进 Padding 以内 —— 边缘一圈留给缩放热区。
             FormBorderStyle = FormBorderStyle.None;
             _titleBar = new TitleBar(this);
             _titleBar.TitleText = Text;
@@ -120,6 +128,33 @@ namespace LoongBrowser
             // 首帧仍然是不透明的一块（实测见 GlassManager 顶部注释）。改到 OnShown。
         }
 
+        // ---------- 无边框窗口的缩放边框 ----------
+
+        /// <summary>
+        /// 补回 WS_THICKFRAME：没有它，系统不认为窗口可缩放，命中测试返回 HT* 也不会响应。
+        /// 同时保留最小化/最大化按钮语义。见 docs/adr/0007-resize-border-band.md。
+        /// </summary>
+        protected override CreateParams CreateParams
+        {
+            get
+            {
+                CreateParams cp = base.CreateParams;
+                cp.Style |= WindowResizer.WS_THICKFRAME
+                          | WindowResizer.WS_MINIMIZEBOX
+                          | WindowResizer.WS_MAXIMIZEBOX;
+                return cp;
+            }
+        }
+
+        protected override void WndProc(ref Message m)
+        {
+            // 客户区 = 整个窗口矩形（否则 WS_THICKFRAME 会把内容挤进边框）
+            if (WindowResizer.HandleMessage(ref m, this)) return;
+            // 最大化时把窗口矩形钉到工作区（否则会溢出、压住任务栏）
+            if (WindowResizer.HandleMinMaxInfo(ref m, this)) return;
+            base.WndProc(ref m);
+        }
+
         /// <summary>窗口已显示且首帧画完：此刻应用 Acrylic 才能一出现就是玻璃</summary>
         protected override void OnShown(EventArgs e)
         {
@@ -136,6 +171,51 @@ namespace LoongBrowser
             {
                 if (WindowState != FormWindowState.Minimized) BeginInvoke(new Action(ApplyGlassToSurface));
             };
+        }
+
+        // ---------- 最大化 / 还原时的尺寸校正 ----------
+
+        private FormWindowState _lastWindowState = FormWindowState.Normal;
+        private Rectangle _savedNormalBounds = Rectangle.Empty;
+
+        /// <summary>
+        /// 无边框 + WS_THICKFRAME 之后，系统仍按"带边框窗口"的规则在最大化/还原之间换算尺寸：
+        /// 还原时会多出 2×边框宽（实测 14px），窗口会比最大化前略大。这里记下最大化前的
+        /// 矩形，还原后钉回去，让"最大化 → 还原"精确回到原样。
+        /// </summary>
+        protected override void OnResize(EventArgs e)
+        {
+            base.OnResize(e);
+
+            // 时序（实测）：最大化 → 还原时先来一次"正确"的 Resize（原矩形），
+            // 紧接着系统又按带边框规则再来一次，把窗口撑大 2×边框宽（14px）。
+            // 所以不能只看 WindowState 的跳变，要在还原之后按原矩形再钉一次。
+            if (WindowState == FormWindowState.Normal && _lastWindowState == FormWindowState.Maximized)
+            {
+                Rectangle target = _savedNormalBounds;
+                if (target != Rectangle.Empty)
+                {
+                    // 系统在还原之后还会再按带边框规则撑大一次，所以排到消息队列末尾再钉，
+                    // 而且钉两次（第二次兜住那一次撑大）。
+                    BeginInvoke(new Action(delegate { RestoreTo(target); }));
+                    BeginInvoke(new Action(delegate { RestoreTo(target); }));
+                }
+            }
+            else if (WindowState == FormWindowState.Normal && Bounds.Width > 0 && Bounds.Height > 0)
+            {
+                _savedNormalBounds = Bounds;
+            }
+
+            _lastWindowState = WindowState;
+        }
+
+        /// <summary>把窗口钉回最大化前的矩形（无边框窗口还原时系统会多算 2×边框宽）</summary>
+        private void RestoreTo(Rectangle target)
+        {
+            if (IsDisposed || WindowState != FormWindowState.Normal) return;
+            if (Bounds == target) return;
+            Bounds = target;
+            ApplyGlassToSurface();
         }
 
         /// <summary>整窗重绘一遍：标题栏与外壳各自先清面再画前景</summary>
@@ -155,6 +235,16 @@ namespace LoongBrowser
         {
             // 故意留空：不绘制背景，露出 Acrylic。
             // 若这里调用 base.OnPaintBackground，GDI 会把客户区涂成不透明色，玻璃就看不见了。
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            // 客户区里没有被子控件覆盖的只有四周那圈缩放边带：先清面露出玻璃，
+            // 再补上外壳边缘的高光与阴影，让这圈和内部外壳连成一片。
+            GlassManager.ClearSurface(e.Graphics, new Rectangle(0, 0, Width, Height));
+
+            if (Padding.Left > 0)
+                VistaTheme.DrawResizeBand(e.Graphics, ClientRectangle);
         }
 
         /// <summary>当前标签的缩放比例（读数，供状态展示与测试使用）</summary>
