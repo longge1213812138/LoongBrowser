@@ -220,18 +220,14 @@ namespace LoongBrowser
                 }
 
                 var textRect = new Rectangle(PadX + TextPad, y, Width - PadX - PadRight - TextPad, _heights[i]);
-                // 菜单坐在不透明浅色底上 → LightSurface 极性（半透明黑阴影）
                 VistaTheme.DrawChromeText(g, m.Text, VistaTheme.UIFont, textRect, fg,
-                    VistaTheme.ShadowPolarity.LightSurface,
                     TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
 
                 // 快捷键
                 if (!string.IsNullOrEmpty(m.Shortcut))
                 {
                     var sr = new Rectangle(Width - PadRight - 150, y, 150 - TextPad, _heights[i]);
-                    // 快捷键是灰字小号，坐在白色菜单底上 → 同样用 LightSurface 深色阴影
                     VistaTheme.DrawChromeText(g, m.Shortcut, VistaTheme.UIFont, sr, DisabledColor,
-                        VistaTheme.ShadowPolarity.LightSurface,
                         TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
                 }
 

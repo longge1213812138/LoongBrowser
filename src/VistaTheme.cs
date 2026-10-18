@@ -64,14 +64,15 @@ namespace LoongBrowser
         public static readonly Color CaptionGlyph = Color.FromArgb(38, 50, 64);
 
         // ---------- 字体 ----------
-        // 黑体优先：用户 2026-10 指定外壳文字统一用黑体（SimHei）。
+        // 使用系统自带的微软雅黑：不内嵌字体文件，exe 保持轻量，也不涉及字体分发授权。
         // WinForms 的 Font 只认单一字体族，没有 CSS 那样的 fallback 链，
-        // 因此把 SimHei 放第一位、雅黑与 Segoe UI 仅作族缺失时的兜底。
-        private static readonly string[] Families = new string[] { "SimHei", "Microsoft YaHei UI", "Segoe UI" };
+        // 这里按"雅黑 UI → 雅黑 → Segoe UI"的顺序取第一个可用的族。
+        private static readonly string[] Families = new string[] { "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI" };
+
         private static Font _ui;
         private static Font _title;
 
-        /// <summary>常规界面字体（10pt；换黑体后由 9pt 上调，补偿其较小的字面）</summary>
+        /// <summary>常规界面字体（10pt）</summary>
         public static Font UIFont
         {
             get
@@ -81,7 +82,7 @@ namespace LoongBrowser
             }
         }
 
-        /// <summary>标题字体（10.5pt；换黑体后由 9.5pt 上调）</summary>
+        /// <summary>标题字体（10.5pt）</summary>
         public static Font TitleFont
         {
             get
@@ -201,37 +202,20 @@ namespace LoongBrowser
             return sb.ToString();
         }
 
-        // ---------- 外壳文字（黑体 + 纯黑 + 阴影） ----------
+        // ---------- 外壳文字（微软雅黑 + 纯黑） ----------
 
         /// <summary>
-        /// 文字阴影的像素偏移。本项目未做 DPI 感知（无 manifest/AutoScaleMode），
-        /// 因此这里按 96 DPI 的设计值给定；将来若引入 DPI 适配，只需改这一处。
-        /// </summary>
-        public const int ShadowOffset = 1;
-
-        /// <summary>阴影极性：由文字背后的衬底决定，玻璃上偏浅、不透明浅底上偏深。</summary>
-        public enum ShadowPolarity
-        {
-            /// <summary>背后是玻璃（背后无衬底，桌面壁纸会透出）：用半透明白色高光</summary>
-            Glass,
-            /// <summary>背后是不透明浅色面板（标签卡片、下拉菜单、书签墙）：用半透明黑色投影</summary>
-            LightSurface
-        }
-
-        private static readonly Color ShadowOnGlass = Color.FromArgb(140, 255, 255, 255);      // 约 0.55
-        private static readonly Color ShadowOnLightSurface = Color.FromArgb(46, 0, 0, 0);      // 约 0.18
-
-        /// <summary>
-        /// 外壳文字的统一绘制入口：先画一层 1px 偏移的半透明阴影，再画主字。
+        /// 外壳文字的统一绘制入口。
         /// </summary>
         /// <remarks>
-        /// 为什么不用 TextRenderer：实测 TextRenderer 完全忽略 foreColor 的 alpha
-        /// （以 Color.FromArgb(80,0,0,0) 绘制，输出像素 alpha 恒为 255），因此画不出
-        /// 半透明阴影。GDI+ 的 DrawString + 半透明 SolidBrush 会真正与底层混色，
-        /// 这是本项目保留 Graphics.DrawString 的唯一原因。
+        /// 用户 2026-10 决定：不画文字阴影，只保留纯黑字。阴影曾按"玻璃上浅、白底上深"
+        /// 做成双极性高光，但实测在深色壁纸下仍救不回可读性，且观感偏脏，故整体移除。
+        /// 这里仍保留统一入口而不直接调 DrawString：GDI+ 的字符串绘制需要
+        /// TextFormatFlags→StringFormat 的映射、& 加速键前缀剥离、TextRenderingHint 设置，
+        /// 集中一处免得每个绘制点各写一遍。
         /// </remarks>
         public static void DrawChromeText(Graphics g, string text, Font font, Rectangle bounds,
-                                          Color color, ShadowPolarity polarity, TextFormatFlags flags)
+                                          Color color, TextFormatFlags flags)
         {
             if (string.IsNullOrEmpty(text) || font == null) return;
             if (bounds.Width <= 0 || bounds.Height <= 0) return;
@@ -242,19 +226,13 @@ namespace LoongBrowser
             if ((flags & TextFormatFlags.NoPrefix) != 0) text = StripAmpersands(text);
 
             TextRenderingHint oldHint = g.TextRenderingHint;
-            // 阴影是位图叠加，ClearType 的亚像素抗锯齿会在阴影边缘留下彩边。
             g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
             try
             {
                 using (var format = BuildFormat(flags))
+                using (var brush = new SolidBrush(color))
                 {
-                    Color shadow = polarity == ShadowPolarity.Glass ? ShadowOnGlass : ShadowOnLightSurface;
-                    var shadowRect = new Rectangle(bounds.X, bounds.Y + ShadowOffset, bounds.Width, bounds.Height);
-                    using (var sb = new SolidBrush(shadow))
-                        g.DrawString(text, font, sb, shadowRect, format);
-
-                    using (var fb = new SolidBrush(color))
-                        g.DrawString(text, font, fb, bounds, format);
+                    g.DrawString(text, font, brush, bounds, format);
                 }
             }
             finally

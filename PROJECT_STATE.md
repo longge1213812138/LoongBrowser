@@ -58,3 +58,21 @@ LoongBrowser：极简 Windows 桌面浏览器（WebView2/Chromium 内核 + C# Wi
 接下来同步 README 与开发计划书的工具链描述（csc/C#5 → Roslyn bootstrap），
 然后跑一次 build.ps1 验证 BUILD OK。
 ```
+
+## 七、当前字体状态（2026-10-18 定稿）
+
+外壳文字用**系统自带的微软雅黑**（`Microsoft YaHei UI` → `Microsoft YaHei` → `Segoe UI`），
+纯黑 `#000000`，**不加阴影**。字号：`UIFont` 10pt、`TitleFont` 10.5pt、`TabStrip.TitleSize` 11.5pt。
+
+曾试过两个方向，均已回退，理由见 `docs/adr/0006-yahei-black-text-no-shadow.md`：
+- 黑体 `SimHei`：商业字体，跨版本渲染不一致，内嵌有授权红线。
+- 内嵌思源黑体子集：授权合法且实测跑通，但把 exe 从 121 KB 撑到 3.1 MB，与极简定位冲突。
+
+## 八、待办需求（用户提出，尚未实现）
+
+- **字体缩放功能**（2026-10-18 提出）：用户将来要做界面字体缩放。当前字号硬编码在
+  `VistaTheme.UIFont`（10pt）、`VistaTheme.TitleFont`（10.5pt）、`TabStrip.TitleSize`（11.5pt）三处，
+  实现时需把这三处收敛到一个可缩放的入口（例如基于基准 pt 乘缩放系数），
+  并注意自绘布局常量（`TitleBarHeight` 等）是否需要随之调整。
+- **新标签页 HTML 的字体与外壳联动**：新标签页是 WebView2 页面，字体缩放若要覆盖网页侧，
+  需在生成 CSS 时注入缩放后的 `font-size`。

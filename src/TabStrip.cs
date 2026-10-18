@@ -42,8 +42,8 @@ namespace LoongBrowser
         /// <summary>当点击标签的关闭按钮时触发，参数为标签索引</summary>
         public static event Action<int> TabCloseRequested;
 
-        /// <summary>字体族优先顺序：黑体优先（用户 2026-10 指定），雅黑与 Segoe UI 仅作族缺失时的兜底</summary>
-        private static readonly string[] Families = new string[] { "SimHei", "Microsoft YaHei UI", "Segoe UI" };
+        /// <summary>字体族优先顺序：系统自带的微软雅黑（不内嵌字体，见 VistaTheme 顶部说明）</summary>
+        private static readonly string[] Families = new string[] { "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI" };
 
         private static readonly Font TitleFont = MakeFont(TitleSize);
 
@@ -161,7 +161,7 @@ namespace LoongBrowser
             // 走 VistaTheme.DrawChromeText 而非 TextRenderer：后者忽略 foreColor 的 alpha，画不出半透明阴影
             // （实测细节见 src/VistaTheme.cs 里 DrawChromeText 的 remarks）。
             VistaTheme.DrawChromeText(g, text, TitleFont, textRect,
-                VistaTheme.Text, VistaTheme.ShadowPolarity.LightSurface,
+                VistaTheme.Text,
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter
                 | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
 

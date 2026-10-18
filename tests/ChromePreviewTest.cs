@@ -62,20 +62,16 @@ namespace LoongBrowser
                 _sb.AppendLine("-- A. 字体与配色（外壳文字口径） --");
                 Font ui = VistaTheme.UIFont;
                 Font title = VistaTheme.TitleFont;
-                Judge("A1 常规外壳字体族 = SimHei（黑体）",
-                      IsSimHei(ui.FontFamily),
-                      "实际 FontFamily=" + ui.FontFamily.Name + " / Font.Name=" + ui.Name
-                      + " / 英文族名=" + EnglishFamilyName(ui.FontFamily));
-                Judge("A1b 标题字体族 = SimHei（黑体）",
-                      IsSimHei(title.FontFamily),
-                      "实际 FontFamily=" + title.FontFamily.Name
-                      + " / 英文族名=" + EnglishFamilyName(title.FontFamily));
-                Info("中文系统上 FontFamily.Name 是本地化名「黑体」，其英文族名才是 SimHei —— 两者同一个字体。");
+                Judge("A1 常规外壳字体族 = 微软雅黑（Microsoft YaHei UI）",
+                      IsYaHei(ui.FontFamily),
+                      "实际 FontFamily=" + ui.FontFamily.Name + " / EN=" + EnglishFamilyName(ui.FontFamily));
+                Judge("A1b 标题字体族 = 微软雅黑",
+                      IsYaHei(title.FontFamily),
+                      "实际 EN=" + EnglishFamilyName(title.FontFamily));
                 Judge("A2 常规字号 = 10pt", Math.Abs(ui.Size - 10f) < 0.01f, "实际 " + ui.Size + "pt");
                 Judge("A3 标题字号 = 10.5pt", Math.Abs(title.Size - 10.5f) < 0.01f, "实际 " + title.Size + "pt");
                 Judge("A4 主文字色 = 纯黑 Color.Black",
                       VistaTheme.Text.ToArgb() == Color.Black.ToArgb(), "实际 " + VistaTheme.Text);
-                Judge("A5 阴影偏移常量 = 1px", VistaTheme.ShadowOffset == 1, "实际 " + VistaTheme.ShadowOffset);
                 Judge("A6 菜单文本去 & 后为 '书签(B)'（NoPrefix 语义）",
                       VistaTheme.StripAmpersands("书签(&B)") == "书签(B)",
                       "实际 " + VistaTheme.StripAmpersands("书签(&B)"));
@@ -152,11 +148,10 @@ namespace LoongBrowser
 
                 // ---------- C. 文字像素级核对 ----------
                 _sb.AppendLine();
-                _sb.AppendLine("-- C. 文字像素级核对（黑体 / 纯黑 / 1px 阴影） --");
+                _sb.AppendLine("-- C. 文字像素级核对（微软雅黑 / 纯黑 / 无阴影） --");
                 TextFormatFlags flags = TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix;
 
-                using (var full = RenderText("百度一下，你就知道 LoongBrowser", ui, VistaTheme.Text,
-                                             VistaTheme.ShadowPolarity.LightSurface, Color.White, flags))
+                using (var full = RenderTextOnly("百度一下，你就知道 LoongBrowser", ui, VistaTheme.Text, Color.White, flags))
                 {
                     int minLum = MinLuminance(full);
                     int black = CountDark(full, new Rectangle(0, 0, full.Width, full.Height), 0);
@@ -164,44 +159,25 @@ namespace LoongBrowser
                     Info("严格纯黑像素数（RGB=0,0,0）= " + black + "（10pt 细笔画下部分像素是抗锯齿灰阶）");
                 }
 
-                using (var textOnly = RenderTextOnly("百度一下", ui, VistaTheme.Text, Color.White, flags))
-                using (var shadowOnly = RenderText("百度一下", ui, Color.Transparent,
-                                             VistaTheme.ShadowPolarity.LightSurface, Color.White, flags))
+                // 用户 2026-10 决定移除文字阴影。这里反向验证：把文字画在白底上，
+                // 若仍存在阴影，笔画下方 1px 处会出现一条与字墨迹同形状的灰带；
+                // 检查该带是否存在非白像素，作为"阴影确实没了"的证据。
+                using (var textBmp = RenderTextOnly("百度百度百度", ui, VistaTheme.Text, Color.White, flags))
                 {
-                    int shadowPixels, visible;
-                    double k1, k2, k3;
-                    ShadowOffsetStats(textOnly, shadowOnly, Color.White,
-                                      out shadowPixels, out visible, out k1, out k2, out k3);
-                    Judge("C2 阴影确实被绘制（主字用透明色时仍有非底色像素）", shadowPixels > 0,
-                          "阴影像素数 = " + shadowPixels);
-                    Info("阴影墨迹 " + shadowPixels + " px，其中 " + visible +
-                         " px 露在笔画之外（其余被主字覆盖 —— 阴影本就该藏在笔画后面）");
-                    Info("露出的阴影与其上方主字墨迹的贴合率：上方 1 行 → " + Pct(k1) +
-                         "，2 行 → " + Pct(k2) + "，3 行 → " + Pct(k3));
-                    Judge("C3 阴影紧贴笔画下方 1 行（1 行贴合率 >= 95%）", k1 >= 0.95,
-                          "1 行贴合率 " + Pct(k1));
-                    Judge("C4 偏移量是 1px 而非 2px（2 行贴合率明显更低）", k2 < k1 - 0.15,
-                          "1 行 " + Pct(k1) + " vs 2 行 " + Pct(k2));
+                    var ink = InkBounds(textBmp, Color.White);
+                    int grayBand = 0;
+                    if (ink.Bottom + 1 < textBmp.Height)
+                    {
+                        for (int x = ink.Left; x <= ink.Right; x++)
+                        {
+                            Color c = textBmp.GetPixel(x, ink.Bottom + 1);
+                            if (c.R < 250) grayBand++;
+                        }
+                    }
+                    Judge("C2 笔画下方 1px 无阴影残留（灰带像素 = 0）", grayBand == 0,
+                          "灰带像素 = " + grayBand);
                 }
 
-                Color glassBack = Color.FromArgb(150, 165, 185);
-                using (var gs = RenderText("百度一下", ui, Color.Transparent,
-                                           VistaTheme.ShadowPolarity.Glass, glassBack, flags))
-                {
-                    int lighter = 0, total = 0;
-                    int backLum = Lum(glassBack);
-                    for (int y = 0; y < gs.Height; y++)
-                        for (int x = 0; x < gs.Width; x++)
-                        {
-                            Color c = gs.GetPixel(x, y);
-                            if (!Differs(c, glassBack, 4)) continue;
-                            total++;
-                            if (Lum(c) > backLum) lighter++;
-                        }
-                    Judge("C5 Glass 极性阴影是半透明白（玻璃背景上表现为提亮）",
-                          total > 0 && lighter == total,
-                          "阴影像素 " + total + "，其中提亮 " + lighter);
-                }
 
                 // ---------- D. 渲染截图 ----------
                 _sb.AppendLine();
@@ -478,9 +454,10 @@ namespace LoongBrowser
         }
 
         /// <summary>文本实验室：白底 / 模拟玻璃底 / 只画阴影 三种情况并排，2 倍放大后肉眼可核对阴影位置。</summary>
+        /// <summary>文本实验室：白底 / 模拟玻璃底两种情况并排，2 倍放大后肉眼可核对字形与纯黑。</summary>
         private static Bitmap BuildTextLab()
         {
-            int w = 880, h = 400;
+            int w = 880, h = 240;
             var bmp = new Bitmap(w, h);
             using (var g = Graphics.FromImage(bmp))
             {
@@ -489,42 +466,34 @@ namespace LoongBrowser
                 TextFormatFlags f = TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix;
                 Font ui = VistaTheme.UIFont;
 
-                TextRenderer.DrawText(g, "1) 白底卡片 + LightSurface：主字纯黑，每笔画下方 1px 半透明黑影",
+                TextRenderer.DrawText(g, "1) 白底卡片：主字纯黑，无阴影（用户 2026-10 决定移除）",
                     ui, new Rectangle(12, 4, w - 24, 20), Color.FromArgb(105, 118, 132));
-                VistaTheme.DrawChromeText(g, "百度一下，你就知道  LoongBrowser 黑体 SimHei 10pt", ui,
-                    new Rectangle(12, 26, w - 24, 26), VistaTheme.Text, VistaTheme.ShadowPolarity.LightSurface, f);
+                VistaTheme.DrawChromeText(g, "百度一下，你就知道  LoongBrowser 微软雅黑 10pt", ui,
+                    new Rectangle(12, 26, w - 24, 26), VistaTheme.Text, f);
 
                 var glass = new Rectangle(0, 62, w, 54);
                 using (var lg = new LinearGradientBrush(glass, Color.FromArgb(226, 236, 247), Color.FromArgb(178, 196, 216), 0f))
                     g.FillRectangle(lg, glass);
-                TextRenderer.DrawText(g, "2) 模拟玻璃底 + Glass：主字纯黑，每笔画下方 1px 半透明白光",
+                TextRenderer.DrawText(g, "2) 模拟玻璃底：主字纯黑，无阴影",
                     ui, new Rectangle(12, 66, w - 24, 20), Color.FromArgb(55, 68, 84));
-                VistaTheme.DrawChromeText(g, "百度一下，你就知道  LoongBrowser 黑体 SimHei 10pt", ui,
-                    new Rectangle(12, 90, w - 24, 26), VistaTheme.Text, VistaTheme.ShadowPolarity.Glass, f);
+                VistaTheme.DrawChromeText(g, "百度一下，你就知道  LoongBrowser 微软雅黑 10pt", ui,
+                    new Rectangle(12, 90, w - 24, 26), VistaTheme.Text, f);
 
-                TextRenderer.DrawText(g, "3) 下面是「百度」二字的 8 倍像素放大：左＝只画阴影（主字透明）· 右＝主字含阴影",
+                TextRenderer.DrawText(g, "3) 下面是「百度」二字的 8 倍像素放大：纯黑主字，笔画下方无灰带",
                     ui, new Rectangle(12, 122, w - 24, 20), Color.FromArgb(105, 118, 132));
 
-                using (var shadowOnly = RenderText("百度", ui, Color.Transparent,
-                                                   VistaTheme.ShadowPolarity.LightSurface, Color.White, f))
-                using (var both = RenderText("百度", ui, VistaTheme.Text,
-                                             VistaTheme.ShadowPolarity.LightSurface, Color.White, f))
+                using (var main = RenderTextOnly("百度", ui, VistaTheme.Text, Color.White, f))
                 {
-                    var crop = InkBounds(shadowOnly, Color.White);
+                    var crop = InkBounds(main, Color.White);
                     crop.Inflate(2, 2);
                     int scale = 8;
-                    var dstL = new Rectangle(30, 142, crop.Width * scale, crop.Height * scale);
-                    var dstR = new Rectangle(dstL.Right + 40, 142, crop.Width * scale, crop.Height * scale);
+                    var dst = new Rectangle(30, 142, crop.Width * scale, crop.Height * scale);
                     g.InterpolationMode = InterpolationMode.NearestNeighbor;
                     g.PixelOffsetMode = PixelOffsetMode.Half;
-                    g.DrawImage(shadowOnly, dstL, crop, GraphicsUnit.Pixel);
-                    g.DrawImage(both, dstR, crop, GraphicsUnit.Pixel);
-                    g.DrawRectangle(Pens.Gray, dstL);
-                    g.DrawRectangle(Pens.Gray, dstR);
-                    TextRenderer.DrawText(g, "左＝阴影（每条笔画正下方多出 1 行浅灰像素）· 右＝主字（阴影藏在笔画后，只在笔画下沿露出 1 行）",
-                        ui, new Rectangle(12, dstR.Bottom + 6, w - 24, 20), Color.FromArgb(70, 82, 96));
-                    TextRenderer.DrawText(g, "（两张图裁自同一块区域、同一缩放比；左图就是 DrawChromeText 里 shadowRect 那一遍的输出）",
-                        ui, new Rectangle(12, dstR.Bottom + 28, w - 24, 20), Color.FromArgb(120, 132, 146));
+                    g.DrawImage(main, dst, crop, GraphicsUnit.Pixel);
+                    g.DrawRectangle(Pens.Gray, dst);
+                    TextRenderer.DrawText(g, "（裁自白底渲染结果；每条笔画下沿直接切回白底，没有阴影灰带）",
+                        ui, new Rectangle(12, dst.Bottom + 6, w - 24, 20), Color.FromArgb(70, 82, 96));
                 }
             }
             return bmp;
@@ -569,19 +538,6 @@ namespace LoongBrowser
             return bmp;
         }
 
-        private static Bitmap RenderText(string text, Font font, Color color,
-                                         VistaTheme.ShadowPolarity polarity, Color back, TextFormatFlags flags)
-        {
-            var bmp = new Bitmap(600, 90);
-            using (var g = Graphics.FromImage(bmp))
-            {
-                g.Clear(back);
-                g.SmoothingMode = SmoothingMode.AntiAlias;
-                VistaTheme.DrawChromeText(g, text, font, new Rectangle(0, 0, bmp.Width, bmp.Height),
-                                          color, polarity, flags);
-            }
-            return bmp;
-        }
 
         private static int Lum(Color c)
         {
@@ -616,47 +572,17 @@ namespace LoongBrowser
             return n;
         }
 
-        /// <summary>
-        /// 量化阴影位移：阴影位图（主字用透明色画，只剩阴影）里
-        /// "露在笔画之外"的那部分像素（主字单独渲染的 textOnly 在同一处没有墨迹），
-        /// 看它正上方 dy 行处主字是否有墨迹。
-        /// 阴影 = 主字整体下移 1px，所以这层露出的 1px 应当紧贴笔画下沿（dy=1 贴合率≈100%），
-        /// 而 dy=2 只是笔画本身的宽度延伸，贴合率会明显更低 —— 两者之差就是"偏移只有 1px"的证据。
-        /// </summary>
-        private static void ShadowOffsetStats(Bitmap textOnly, Bitmap shadow, Color back,
-                                              out int shadowPixels, out int visible,
-                                              out double k1, out double k2, out double k3)
-        {
-            shadowPixels = 0;
-            visible = 0;
-            int m1 = 0, m2 = 0, m3 = 0;
-            for (int y = 0; y < shadow.Height; y++)
-                for (int x = 0; x < shadow.Width; x++)
-                {
-                    if (!Differs(shadow.GetPixel(x, y), back, 4)) continue;
-                    shadowPixels++;
-                    // 只统计"阴影可见"的位置：主字在同一处没有墨迹，露出的就是那条 1px 阴影
-                    if (Differs(textOnly.GetPixel(x, y), back, 4)) continue;
-                    visible++;
-                    if (y >= 1 && Differs(textOnly.GetPixel(x, y - 1), back, 4)) m1++;
-                    if (y >= 2 && Differs(textOnly.GetPixel(x, y - 2), back, 4)) m2++;
-                    if (y >= 3 && Differs(textOnly.GetPixel(x, y - 3), back, 4)) m3++;
-                }
-            k1 = visible == 0 ? 0 : (double)m1 / visible;
-            k2 = visible == 0 ? 0 : (double)m2 / visible;
-            k3 = visible == 0 ? 0 : (double)m3 / visible;
-        }
 
-        /// <summary>判断是不是黑体：中文系统上 FontFamily.Name 是本地化名「黑体」，需要用英文族名比对。</summary>
-        private static bool IsSimHei(FontFamily family)
+        /// <summary>判断是不是微软雅黑：中文系统上 FontFamily.Name 是本地化名「微软雅黑」，需要用英文族名比对。</summary>
+        private static bool IsYaHei(FontFamily family)
         {
             if (family == null) return false;
-            if (string.Equals(family.Name, "SimHei", StringComparison.OrdinalIgnoreCase)) return true;
-            if (family.Name == "黑体") return true;
-            return string.Equals(EnglishFamilyName(family), "SimHei", StringComparison.OrdinalIgnoreCase);
+            string en = EnglishFamilyName(family);
+            if (en != null && en.StartsWith("Microsoft YaHei", StringComparison.OrdinalIgnoreCase)) return true;
+            return family.Name != null && family.Name.StartsWith("微软雅黑", StringComparison.OrdinalIgnoreCase);
         }
 
-        /// <summary>取字体族的英文名（中文系统上 Name 是「黑体」，en-US 族名才是 SimHei）。</summary>
+        /// <summary>取字体族的英文名（中文系统上 Name 可能是本地化名，en-US 族名才是英文）。</summary>
         private static string EnglishFamilyName(FontFamily family)
         {
             if (family == null) return "(null)";

@@ -244,9 +244,7 @@ namespace LoongBrowser
                 else if (i == _hotMenu)
                     VistaTheme.DrawSurface(g, r, Color.FromArgb(235, 244, 252), Color.Empty, 4);
 
-                // 菜单项坐在玻璃上，阴影用 Glass 极性（半透明白）
                 VistaTheme.DrawChromeText(g, m.Text, VistaTheme.UIFont, r, VistaTheme.Text,
-                    VistaTheme.ShadowPolarity.Glass,
                     TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
 
                 m.LayoutRect = r;
@@ -349,7 +347,6 @@ namespace LoongBrowser
                 // 两态都纯黑：选中态由卡片底色（白 / #EEF2F7）区分，不再靠灰字
                 title = VistaTheme.Ellipsize(g, title, VistaTheme.UIFont, textRect.Width);
                 VistaTheme.DrawChromeText(g, title, VistaTheme.UIFont, textRect, VistaTheme.Text,
-                    VistaTheme.ShadowPolarity.LightSurface,
                     TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
             }
 

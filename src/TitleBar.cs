@@ -97,10 +97,8 @@ namespace LoongBrowser
             int textLeft = 10;
             var textRect = new Rectangle(textLeft, 0,
                 Math.Max(0, MinRect().Left - textLeft - 8), Height);
-            // 标题坐在玻璃上，阴影用 Glass 极性（半透明白）；截断仍走 Ellipsize
             string title = VistaTheme.Ellipsize(g, _titleText, VistaTheme.UIFont, textRect.Width);
             VistaTheme.DrawChromeText(g, title, VistaTheme.UIFont, textRect, VistaTheme.Text,
-                VistaTheme.ShadowPolarity.Glass,
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
 
             // 三个标题栏按钮

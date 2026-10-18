@@ -199,7 +199,7 @@ namespace LoongBrowser
         private const string Css = @"
 *{box-sizing:border-box}
 html,body{margin:0;min-height:100%}
-body{font:14px/1.5 'SimHei','Microsoft YaHei',sans-serif;color:#000000;background:#f6f7f9;text-shadow:0 1px 1px rgba(0,0,0,.18)}
+body{font:14px/1.5 'Microsoft YaHei','Microsoft YaHei UI',sans-serif;color:#000000;background:#f6f7f9}
 .wrap{max-width:1080px;margin:0 auto;padding:28px 24px 40px}
 .hd{display:flex;align-items:baseline;gap:10px;margin:0 2px 16px}
 .ttl{font-size:18px;font-weight:600}
