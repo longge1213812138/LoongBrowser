@@ -3,7 +3,7 @@
 极简 Windows 桌面浏览器：**WebView2（Chromium 内核）+ C# WinForms**，单语言实现，零第三方运行时依赖，编译无需安装 Visual Studio / SDK。
 
 ```
-主程序 ~120 KB · 依赖仅 WebView2 官方 SDK 3 个 DLL（约 880 KB） · 首次构建自动下载 Roslyn 编译器（约 100 KB），无需手工安装工具链
+主程序 ~159 KB · 依赖仅 WebView2 官方 SDK 3 个 DLL（约 880 KB） · 首次构建自动下载 Roslyn 编译器（约 100 KB），无需手工安装工具链
 ```
 
 ---
@@ -11,6 +11,7 @@
 ## 亮点
 
 - **零依赖包袱** —— 只用系统自带的 .NET Framework 与 WebView2 运行时；编译由 `build.ps1` 首次自动引导 Roslyn 编译器（下载到 `tools\roslyn\`，不进仓库），失败时回退 Windows 自带的 `csc.exe`；不需要 Visual Studio、不需要安装 SDK
+- **应用图标** —— 罗盘环扁平图标（`icons/D-compass.svg`），构建时经 csc `/win32icon:` 直接嵌入 exe（无 `.resx`/`.rc` 资源文件）；ICO 含 16~256 共 9 档，小尺寸按档重绘以保证可辨识
 - **单实例 + 真·多窗口** —— 重复启动会把地址转发给已开窗口（适合当默认浏览器）；右键可在进程内开新窗口，共享同一个内核环境，不争抢用户数据目录
 - **新标签页 = 书签墙** —— 新标签页直接展示全部书签，每个书签带网站图标
 - **本地文件直开** —— 双击 `.html` 文件（设为默认打开方式后），或把文件拖进窗口
@@ -86,6 +87,7 @@
 | `%APPDATA%\LoongBrowser\downloads.json` | 下载记录 |
 | `%APPDATA%\LoongBrowser\favicons\` | 网站图标缓存（一个域名一个 PNG，删掉即自动重建） |
 | `%APPDATA%\LoongBrowser\popup.json` | 小窗设置（是否默认置顶） |
+| `%APPDATA%\LoongBrowser\kernel.log` | 内核初始化诊断日志（**仅失败时写入**；SDK/运行时版本、数据目录状态、完整异常链。设环境变量 `LOONGBROWSER_KDIAG=1` 可记录正常启动） |
 | `%LOCALAPPDATA%\LoongBrowser\WebView2\` | 内核数据（缓存 / Cookie / 会话） |
 
 ---
@@ -140,12 +142,14 @@ powershell -ExecutionPolicy Bypass -File build.ps1
 ## 项目结构
 
 ```
-build.ps1                一键编译：主程序 + 安装器 + 拷贝依赖到 dist\（首次自动 bootstrap Roslyn 到 tools\roslyn\）
+build.ps1                一键编译：主程序 + 安装器 + 拷贝依赖到 dist\（首次自动 bootstrap Roslyn 到 tools\roslyn\；经 /win32icon: 嵌入应用图标）
+icons/                   应用图标：SVG 源文件 + LoongBrowser.ico（9 档）+ _make_ico.py 再生成脚本
 src/
   Program.cs             入口：单实例互斥、命令行 URL 解析、进程内多窗口管理
   MainForm.cs            主窗口：菜单 / 工具栏 / 地址栏 / 标签容器，URL 归一化
   FullscreenManager.cs   全屏管理：视频真全屏（Fullscreen API，含标签栏一起隐藏）+ F11 轻量全屏（隐藏菜单/工具栏、最大化），页面内 F11 转发与多窗口状态隔离
-  TabManager.cs          标签页与 WebView2 生命周期、右键菜单、图标采集、新标签页渲染、网页缩放 API
+  TabManager.cs          标签页与 WebView2 生命周期、右键菜单、图标采集、新标签页渲染、网页缩放 API、内核初始化失败自救
+  KernelDiag.cs          内核初始化诊断：环境事实 + 异常链落盘（仅失败时写；LOONGBROWSER_KDIAG=1 记录正常路径）
   ZoomManager.cs         网页缩放：50%~200% 区间与步进、预设档位、按键/滚轮判定
   NewTabPage.cs          新标签页（书签墙）HTML 生成与安全过滤
   FaviconCache.cs        网站图标三级来源 + 归一化缓存
@@ -211,6 +215,7 @@ tests/                   测试与 API 诊断工具（见上表），以及各�
 - **缩放记忆**：50%~200% 的缩放只保存在当前会话内存里（按标签生效，新开标签页与小窗沿用），重启后回到 100%；未做按站点记忆（不同网站分别记住比例）
 - **网页有焦点时的键盘 / 滚轮缩放不接管**：网页成为焦点后，按键与滚轮消息的接收方是 WebView2 内核**进程**里的窗口（与宿主不同 pid），不会进入本程序的消息队列；要接管只能装系统级低级钩子（`WH_KEYBOARD_LL` / `WH_MOUSE_LL`，全局监听键鼠），权衡后明确不做 —— 不为一个快捷键引入系统级输入监听。那种情形请用「查看」菜单 / 工具栏下拉缩放；内核自身对部分缩放快捷键有响应（早期实测 `Ctrl + =` 有效），但 `Ctrl + -` / `Ctrl + 0` / `Ctrl + 滚轮` 不作保证
 - **F11 在网页焦点下的入口靠页面内转发**：注入脚本监听 `keydown` 后 `postMessage` 回宿主；若某页面删改了 `chrome.webview`（极少见）导致转发失效，点一下地址栏（焦点回到宿主）再按 `F11` 即可，全屏状态本身不受影响
+- **内核初始化失败有自救与诊断**：`EnsureCoreWebView2Async` 失败（如 `0x800700AA` 资源被占用）时，程序会丢弃可能损坏的内核环境、清理数据目录里的陈旧锁文件并自动重试一次；仍失败才弹窗，弹窗含错误码、SDK 与运行时版本、日志路径。完整细节落在 `%APPDATA%\LoongBrowser\kernel.log`
 - **平台**：仅 Windows 10/11（依赖 WebView2 与 .NET Framework）
 
 ---
