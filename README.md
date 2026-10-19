@@ -69,7 +69,7 @@
 - **书签**：一键收藏本页；管理器支持打开 / 删除
 - **下载**：自动保存到系统「下载」文件夹并记录；支持打开文件 / 文件夹、删除记录
 - **清理**：缓存 / 历史记录 / Cookie 分项清理（调用 WebView2 官方 API）
-- **设为默认浏览器**：自动完成 HKCU 登记并引导到系统设置完成确认
+- **设为默认浏览器**：自动完成 HKCU 登记并引导到系统设置完成确认。登记只有一个实现（`FileAssociations`），安装器与主程序共用；每次登记都指向「当前正在运行的这份 exe」，并顺手清掉指向已删目录的历史条目 —— 「打开方式」里始终只有一条 LoongBrowser
 
 ### 打开本地文件
 
@@ -145,6 +145,8 @@ powershell -ExecutionPolicy Bypass -File build.ps1
 | 新标签页（端到端） | `powershell -File tests\run_newtab_e2e.ps1` | 真实内核 + 真实 `TabManager`：渲染、图标两条通道、点击桥与越权拒绝 | 18 |
 | 启动页设置（单元） | `powershell -File tests\run_startup_test.ps1` | 三种启动模式的决策与优先级、伪协议拦截、盘符与 host:port 不误判、落盘往返与损坏回落、墙标题与标签页标题分离、对话框三选一与校验 | 85 |
 | 启动页（端到端） | `powershell -File tests\run_startup_e2e.ps1` | 真实内核 + 真实 `MainForm`：三种模式真的打开对应页面、设置跨重启保留；并逐项验证「＋新标签」在三种模式下都仍是书签墙 | 20 |
+| 关闭后残留（回归） | `powershell -File tests\run_residue_test.ps1` | 真实 `LoongBrowserContext` + 真实 `MainForm`：悬停出提示窗后关窗、以及「启动页收藏→关窗」两条路径，`Application.Run` 必须返回；关窗前 `OpenForms` 里还挂着 `ChromeTooltip` | 11 |
+| 打开方式条目唯一（回归） | `powershell -File tests\run_assoc_test.ps1` | 用 Explorer 自己的 `SHAssocEnumHandlers` 判定（与右键菜单同口径）：登记后只出现一条 LoongBrowser、指向当前 exe；塞入三类历史遗留后确实变成多条，清理后回到一条；其它应用不受影响 | 8 |
 | 画中画弹窗（端到端） | `powershell -File tests\run_pip_popup_e2e.ps1` | 真实内核：复现修复前「当前页被顶成空白页」、验证修复后页面不受影响且小窗被允许；并探测真实 B 站视频页 | 8 |
 | 小窗置顶（端到端） | `powershell -File tests\run_popup_window_e2e.ps1` | 真实内核 + 真实 `TabManager`：小窗创建、默认置顶、开关切换与记忆、按请求尺寸、opener 可写入小窗、`window.close()` 联动关闭 | 12 |
 | 浏览历史（单元） | `powershell -File tests\run_history_test.ps1` | 记录与排序、只记可导航地址、同址去重、标题回填、删除/清空、条数上限、落盘与重载、时间分组 | 27 |
@@ -158,7 +160,7 @@ powershell -ExecutionPolicy Bypass -File build.ps1
 | 玻璃外壳（回归） | `powershell -File tests\run_glass_test.ps1` | 外壳/标题栏每帧先清面再画前景（窗口变窄不留旧地址栏）、绘制前布局定稿、`GlassManager.Apply` 幂等、玻璃必须显示后再应用（不在构造函数里）、清面后整块重画不被失效矩形裁剪 | 9 |
 | 外壳渲染（截图） | `powershell -File tests\run_chrome_preview.ps1` | 字体/字号/纯黑文字、布局与命中矩形、玻璃区每帧清面且不铺底色、前景文字与图标确实画出；输出 `tests\chrome_preview*.png` 供人工核对 | 24 |
 
-运行结果写入 `tests\*_log.txt`。合计 **512** 项用例。
+运行结果写入 `tests\*_log.txt`。合计 **531** 项用例。
 
 ---
 
@@ -178,6 +180,7 @@ src/
   ZoomManager.cs         网页缩放：50%~200% 区间与步进、预设档位、按键/滚轮判定
   NewTabPage.cs          新标签页（书签墙）HTML 生成与安全过滤
   StartupPage.cs         启动页设置（空白页 / 书签墙 / 指定网站）+ 设置对话框
+  FileAssociations.cs    「打开方式」登记的唯一出口：身份键、ProgId、清理失效的历史条目、Explorer 同口径枚举
   FaviconCache.cs        网站图标三级来源 + 归一化缓存
   BookmarkStore.cs       书签存取 + 书签管理对话框
   DownloadStore.cs       下载记录
@@ -258,3 +261,4 @@ tests/                   测试与 API 诊断工具（见上表），以及各�
 - [双击打开HTML报错-根因分析与修复报告.md](双击打开HTML报错-根因分析与修复报告.md) —— v1.0.1：双击本地 HTML 报 DNS 错的根因分析与修复
 - [新标签页书签墙-实现说明与边界.md](新标签页书签墙-实现说明与边界.md) —— 书签墙的实现方式、配置项与边界清单
 - [docs/adr/0008-startup-page-vs-new-tab.md](docs/adr/0008-startup-page-vs-new-tab.md) —— 为什么启动页与「＋新标签」必须分开，以及默认值为何保持空白页
+- [docs/adr/0009-exit-criteria-and-single-association.md](docs/adr/0009-exit-criteria-and-single-association.md) —— 退出判据为何只看浏览器窗口；「打开方式」为何必须只有一个实现

@@ -266,6 +266,9 @@ namespace LoongBrowser
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
             try { Application.RemoveMessageFilter(this); } catch (Exception) { }
+            // 外壳的悬停提示、菜单下拉是独立窗口，不属于"浏览器窗口"。
+            // 主窗口关闭时主动收掉它们，免得在桌面上留一块孤儿小块。
+            try { if (_chrome != null) _chrome.CloseTransientWindows(); } catch (Exception) { }
             base.OnFormClosed(e);
         }
 
@@ -582,6 +585,8 @@ namespace LoongBrowser
         {
             try
             {
+                // 登记到"当前正在运行的这份 exe"，并顺手清掉指向旧安装目录的历史条目
+                // （否则"打开方式"里会挂着点不动的旧 LoongBrowser）
                 DefaultBrowser.Register(Application.ExecutablePath);
                 DefaultBrowser.OpenSettings();
                 MessageBox.Show(

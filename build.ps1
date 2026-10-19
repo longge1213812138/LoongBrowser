@@ -98,7 +98,13 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # ---------- 2) installer ----------
-$insSrc = Join-Path $root "src\Installer.cs"
+# The installer links FileAssociations.cs too: file/URL registration must have ONE
+# implementation, or installer and app drift apart and "Open with" ends up with
+# duplicate LoongBrowser entries coming from two different code paths.
+$insSrc = @(
+    (Join-Path $root "src\Installer.cs"),
+    (Join-Path $root "src\FileAssociations.cs")
+)
 $insRefs = @("System.Windows.Forms.dll", "System.Drawing.dll", "Microsoft.CSharp.dll")
 $insArgs = @("/nologo", "/target:winexe", "/codepage:65001", "/optimize+", ("/out:" + (Join-Path $dist "LoongBrowserSetup.exe")))
 if ($useRoslyn) { $insArgs += "/langversion:latest" }

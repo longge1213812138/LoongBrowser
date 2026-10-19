@@ -114,10 +114,25 @@ namespace LoongBrowser
             Controls.Add(_addressBox);
         }
 
+        /// <summary>
+        /// 主窗口关闭前收掉所有"临时窗口"（悬停提示、菜单下拉）。
+        /// 它们是独立 Form，会进 Application.OpenForms —— 窗口已经没了还留一个隐藏的
+        /// 提示窗，会让"最后一个窗口关闭就退出"这类判据失灵（见 LoongBrowserContext）。
+        /// </summary>
+        public void CloseTransientWindows()
+        {
+            HideTooltip();
+            try { if (_dropDown != null && !_dropDown.IsDisposed) _dropDown.Close(); } catch (Exception) { }
+            _dropDown = null;
+            try { _tooltipTimer.Stop(); } catch (Exception) { }
+            try { if (_tooltipWatch != null) _tooltipWatch.Stop(); } catch (Exception) { }
+        }
+
         protected override void Dispose(bool disposing)
         {
             if (disposing)
             {
+                try { CloseTransientWindows(); } catch (Exception) { }
                 try { _tooltipTimer.Stop(); _tooltipTimer.Dispose(); } catch (Exception) { }
                 try { if (_tooltipWatch != null) { _tooltipWatch.Stop(); _tooltipWatch.Dispose(); } } catch (Exception) { }
                 try { if (_tooltip != null && !_tooltip.IsDisposed) _tooltip.Dispose(); } catch (Exception) { }

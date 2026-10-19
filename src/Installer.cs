@@ -197,53 +197,20 @@ namespace LoongBrowserSetup
 
         // ---------- 注册表 ----------
 
+        /// <summary>
+        /// 登记文件/URL 关联。实现只有一份（src\FileAssociations.cs），安装器与主程序共用 ——
+        /// 两边各写一套正是"打开方式里出现多个 LoongBrowser"的来源。
+        /// </summary>
         private static void RegisterBrowser(string exePath)
         {
-            using (var k = Registry.CurrentUser.CreateSubKey(@"Software\Classes\" + ProgId))
-            {
-                k.SetValue("", "LoongBrowser Web Document");
-                k.SetValue("FriendlyTypeName", "LoongBrowser Web Document");
-                using (var c = k.CreateSubKey(@"shell\open\command"))
-                    c.SetValue("", "\"" + exePath + "\" \"%1\"");
-                using (var i = k.CreateSubKey("DefaultIcon"))
-                    i.SetValue("", exePath + ",0");
-            }
-
-            using (var k = Registry.CurrentUser.CreateSubKey(ClientKey))
-            {
-                k.SetValue("", "LoongBrowser");
-                k.SetValue("LocalizedString", "LoongBrowser");
-                using (var c = k.CreateSubKey(@"shell\open\command"))
-                    c.SetValue("", "\"" + exePath + "\"");
-                using (var d = k.CreateSubKey("DefaultIcon"))
-                    d.SetValue("", exePath + ",0");
-                using (var cap = k.CreateSubKey("Capabilities"))
-                {
-                    cap.SetValue("ApplicationName", "LoongBrowser");
-                    cap.SetValue("ApplicationIcon", exePath + ",0");
-                    cap.SetValue("ApplicationDescription", "极简 Chromium 内核浏览器");
-                    using (var u = cap.CreateSubKey("URLAssociations"))
-                    {
-                        u.SetValue("http", ProgId);
-                        u.SetValue("https", ProgId);
-                    }
-                }
-            }
-
-            using (var k = Registry.CurrentUser.CreateSubKey(@"Software\RegisteredApplications"))
-                k.SetValue("LoongBrowser", ClientKey + @"\Capabilities");
+            LoongBrowser.FileAssociations.Register(exePath);
+            // 装到新位置后，把指向旧安装目录的死登记顺手清掉
+            LoongBrowser.FileAssociations.RemoveStaleRegistrations();
         }
 
         private static void UnregisterBrowser()
         {
-            try { Registry.CurrentUser.DeleteSubKeyTree(@"Software\Clients\StartMenuInternet\LoongBrowser", false); } catch (Exception) { }
-            try { Registry.CurrentUser.DeleteSubKeyTree(@"Software\Classes\LoongBrowser.URL", false); } catch (Exception) { }
-            try
-            {
-                using (var k = Registry.CurrentUser.CreateSubKey(@"Software\RegisteredApplications"))
-                    k.DeleteValue("LoongBrowser", false);
-            }
-            catch (Exception) { }
+            LoongBrowser.FileAssociations.Unregister(null);
         }
 
         public static void DefaultBrowserOpenSettings()

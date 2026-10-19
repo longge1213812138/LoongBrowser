@@ -76,6 +76,18 @@ _Avoid_: 透明文字, 浮字
 标签头卡片上显示网页标题的文字；选中态与未选中态共用这同一个词，两者的区别在卡片底色而不在文字本身。
 _Avoid_: 标签文字, 页签标题
 
+**Transient Window**:
+外壳临时创建的辅助窗口：悬停提示、菜单下拉、消息框。它们会进 `Application.OpenForms`，但**不参与**"最后一个窗口关闭就退出"的判定。
+_Avoid_: 弹窗, 子窗口, 辅助界面
+
+**Browser Window**:
+承载网页的顶层窗口（`MainForm`）。进程存亡只数它。
+_Avoid_: 主窗口（作为退出判据时）, 窗体
+
+**Association Entry**:
+右键「打开方式」里的一行。由三处共同决定：`Applications\<exe>`、`<ext>\OpenWithProgids` 指向的 ProgId、以及 Windows 留下的 `<ext>_auto_file`。
+_Avoid_: 文件关联（指键名时）, 打开方式列表
+
 **Chrome Tooltip**:
 鼠标在工具栏按钮上停满 1 秒后弹出的名字标签。独立分层窗口，色键透明，不抢焦点。
 _Avoid_: 提示框, tooltip 控件, 气泡

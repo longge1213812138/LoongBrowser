@@ -118,6 +118,67 @@ DWM 在窗口失活时停用 Acrylic：点菜单、切应用、点桌面之后�
 而 `src\` 早已用上现代语法，这些套件其实**编译不过**（报 CS1985 `catch` 里 await）。
 已全部改为优先 `tools\roslyn\csc.exe` + `/langversion:latest`。
 
+## 二·九、未提交：关闭后进程残留 + 「打开方式」多条历史版本（2026-10-19）
+
+两个独立缺陷，共同点是都源于"把临时/历史状态当成常态"。
+
+### 1. 关闭窗口后进程残留，导致下次启动不了
+
+**症状**：点右上角关闭，进程还在；再启动时悄悄退出（单实例互斥体仍被占用）。
+
+**根因**（不是猜的，是探针里打印出来的）：
+
+    FormClosed 时 OpenForms = [ChromeTooltip(隐藏)] ; Count=1
+
+`LoongBrowserContext` 用 `Application.OpenForms.Count == 0` 当退出判据，而外壳的悬停提示
+（`ChromeTooltip`，独立 Form）还挂在集合里 —— 它隐藏着，但 Form 对象没释放。
+于是 `ExitThread()` 不执行：窗口没了，消息循环还在转，进程存活，互斥体不释放。
+
+触发路径就是日常操作：**鼠标肯定会先滑过工具按钮**，停满 1 秒提示窗就被创建、
+`Hide()` 只隐藏不销毁。用户点"收藏"（或任何一个按钮）时必然经过这条路径。
+
+**修法**：
+- 判据换成"浏览器窗口计数"（`LoongBrowserContext` 自己记账 `List<Form>`），
+  不再数"任何窗口"——提示窗、下拉菜单本来就不该决定进程存亡；
+- 关窗时 `GlassChrome.CloseTransientWindows()` 主动收掉提示窗与下拉菜单，
+  不在桌面上留孤儿小块。
+
+**回归**：`tests\run_residue_test.ps1`（两条路径 × 关窗必返回），
+实测同一场景下**旧版 exit=1 RESIDUE、新版 exit=0 EXITED cleanly**；
+真实鼠标"悬停→关闭"连续 5 轮全干净；"关闭→立即重启→再关闭"全通。
+
+### 2. 右键「打开方式」里有很多个 LoongBrowser
+
+**根因**：条目有三个来源，各写各的：
+
+| 来源 | 谁写 | 问题 |
+|---|---|---|
+| `Applications\LoongBrowser.exe` | 安装器 | 指向安装目录；装到别处后旧目录删了就是死链 |
+| `LoongBrowser.html` (ProgId) + `OpenWithProgids` | 主程序 `DefaultBrowser.Register` | 指向"当前 exe"，和上一条路径常常不同 |
+| `<ext>_auto_file` | **Windows 自己** | 用户用"打开方式"选过一次就固化一条；程序挪位置后永久残留 |
+
+第三条最隐蔽：`html_auto_file` / `htm_auto_file` 实测分别指向
+`D:\Program Files (x86)\LoongBrowser\` 和 `C:\Users\...\浏览器\dist\`，两个目录早就没了。
+
+**修法**：
+- 新增 `src/FileAssociations.cs` 作为**唯一出口**，安装器与主程序共用同一份实现
+  （`build.ps1` 把它一并编进安装器），杜绝两套写法再次分叉；
+- 登记永远指向"当前正在运行的这份 exe"，并设 `FriendlyAppName`；
+- `RemoveStaleRegistrations()` 清理"指向本程序且目标已不存在"的登记，
+  含 `_auto_file`；只认自己写下的键，别的应用一概不碰；
+- 主程序**每次启动**静默跑一次清理，用户不必先点"设为默认浏览器"才清净。
+
+**回归**：`tests\run_assoc_test.ps1`。判据不是自建的注册表视图，而是
+`SHAssocEnumHandlers` —— 资源管理器构建右键菜单时调用的就是这个 API，
+所以它列出的条数 = 用户数得到的条数。（踩过的坑：用自建视图当判据会得出错误结论。）
+
+实测：`.html` 的打开方式里 LoongBrowser 从 **4 条降到 1 条**。
+
+### 一条经验
+
+两个 bug 都栽在同一件事上：**用"我写的注册表键/我认识的窗口"当事实**。
+事实要用系统自己的口径去问 —— 窗口存亡问消息循环，菜单条目问 Explorer 的枚举接口。
+
 ## 三、本机环境注意事项（重要，接手必读）
 
 1. **构建命令**：这台机器的执行策略会拦 `powershell -File build.ps1`，必须用
