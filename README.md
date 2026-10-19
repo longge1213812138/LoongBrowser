@@ -26,6 +26,7 @@
 - **地址栏**：自动识别四类输入 —— 完整网址（原样打开）、本地路径（盘符 / UNC / 已存在的文件 → 规范化为 `file:///`）、带点号的域名（补 `https://`）、其余当关键词交给 Bing 搜索；右侧「复制」「粘贴」按钮可把地址栏内容送入剪贴板 / 从剪贴板回填地址栏
 - 前进 / 后退 / 刷新；多标签页
 - **标签页外观**：标题字号加大（10.5pt）、标签之间留出明显间隙、**所有标签宽度统一**（210px 固定尺寸，超出用省略号，悬停看完整标题）
+- **贴边分屏（Aero Snap）**：把窗口拖到屏幕左/右边缘松手即为左/右半屏，拖到顶部即最大化，从最大化拖离立刻还原成原来的大小；双击标题栏最大化/还原。缩放与吸附都在不引入 `WS_THICKFRAME` 的前提下实现，因此**玻璃在失焦时依然常驻**（见 ADR-0010）
 - **链接分流**：同站跳转留在当前标签（历史可回溯），跨站链接才新开标签页
 - **右键菜单**：后退 / 前进 / 刷新、「在新标签页中打开链接」、「在新窗口中打开链接」、「复制链接地址」、「复制图片地址」、「在新标签页中打开图片」；选中文字时可一键「在新标签页中搜索」（交给 Bing）；当前页也能「在新标签页中打开」「复制当前页面地址」；输入框场景保留系统默认的复制/粘贴菜单
 - **网页缩放（50% ~ 200%）**：「查看」菜单（放大 / 缩小 / 实际大小 + 11 档预设）与工具栏的缩放下拉**任何时候都可用**（50 / 67 / 75 / 80 / 90 / 100 / 110 / 125 / 150 / 175 / 200%）；焦点在地址栏等本程序自己的控件上时，`Ctrl + +` 放大、`Ctrl + -` 缩小、`Ctrl + 0` 恢复 100%（含小键盘与 `Ctrl + Shift + =` 写法）以及 `Ctrl + 滚轮` 同样生效 —— 只用进程内消息过滤器，只拦发给本窗口的消息，不碰程序之外的任何输入。比例按标签保存、换页不丢；调过之后新开的标签页与弹出小窗都沿用，到两端自动封顶 / 触底并置灰对应菜单项（会话内有效，不落盘）
@@ -155,12 +156,14 @@ powershell -ExecutionPolicy Bypass -File build.ps1
 | 缩放逻辑（单元） | `powershell -File tests\run_zoom_test.ps1` | 50%~200% 区间约束、1% 归一化、步进与两端封死、预设档位、`Ctrl+=/-/0` 与 `Ctrl+滚轮` 的判定（不误伤 `Ctrl+C`/`Ctrl+Shift+D`） | 74 |
 | 网页缩放（端到端） | `powershell -File tests\run_zoom_e2e.ps1` | 真实内核 + 真实 `TabManager`：比例真的写进内核、两端封顶、新标签页继承会话比例、换页不丢、按屏幕坐标命中标签且不影响隐藏标签 | 29 |
 | F11 轻量全屏（端到端） | `powershell -File tests\run_fullscreen_e2e.ps1` | 真实窗口结构 + 真实内核：进出后菜单/工具栏/窗口状态原样还原、标签栏与标题栏保留、页面内 F11 转发链（注入脚本 → postMessage → 切换）、与视频真全屏共存不串状态 | 38 |
-| 玻璃常驻 + 边缘缩放（回归） | `powershell -File tests\run_glass_persist_test.ps1` | 窗口样式**不含** `WS_THICKFRAME`（含它则失焦必丢玻璃）、边缘八向命中、拖拽会话改 `Bounds`、最小尺寸钳制 | 17 |
+| 玻璃常驻 + 缩放能力（回归） | `powershell -File tests\run_glass_persist_test.ps1` | 窗口样式**不含** `WS_THICKFRAME`（含它则失焦必丢玻璃）、边缘八向命中、边缘映射到 `HT*`、贴边分屏判定 | 17 |
+| 贴边分屏（单元） | `powershell -File tests\run_snaptest.ps1` | 贴边阈值判定、左右半屏矩形正好拼满工作区（含奇数宽度）、贴顶最大化、从最大化拖离的还原几何 | 19 |
+| 缩放/分屏 + 玻璃（端到端） | `powershell -File tests\run_snap_test.ps1` | 真实窗口：样式不含 `WS_THICKFRAME`、最大化铺满工作区不盖任务栏、还原回原位、吸附矩形与玻璃状态 | 12 |
 | 工具栏悬停提示（回归） | `powershell -File tests\run_tooltip_test.ps1` | 悬停 1 秒才弹、文字 = 按钮名字、换按钮立刻收起并重新计时、移出/点击收起、提示挂在按钮上方不压标签条 | 17 |
 | 玻璃外壳（回归） | `powershell -File tests\run_glass_test.ps1` | 外壳/标题栏每帧先清面再画前景（窗口变窄不留旧地址栏）、绘制前布局定稿、`GlassManager.Apply` 幂等、玻璃必须显示后再应用（不在构造函数里）、清面后整块重画不被失效矩形裁剪 | 9 |
 | 外壳渲染（截图） | `powershell -File tests\run_chrome_preview.ps1` | 字体/字号/纯黑文字、布局与命中矩形、玻璃区每帧清面且不铺底色、前景文字与图标确实画出；输出 `tests\chrome_preview*.png` 供人工核对 | 24 |
 
-运行结果写入 `tests\*_log.txt`。合计 **531** 项用例。
+运行结果写入 `tests\*_log.txt`。合计 **562** 项用例。
 
 ---
 
@@ -172,7 +175,8 @@ icons/                   应用图标：SVG 源文件 + LoongBrowser.ico（9 档
 src/
   Program.cs             入口：单实例互斥、命令行 URL 解析、进程内多窗口管理
   MainForm.cs            主窗口：菜单 / 工具栏 / 地址栏 / 标签容器，URL 归一化
-  WindowResizer.cs       无边框窗口的边缘 / 角落拖拽缩放（自实现；刻意不用 WS_THICKFRAME，见 ADR-0007）
+  WindowResizer.cs       边缘/角落命中与 HT* 映射（交给系统起缩放循环；刻意不用 WS_THICKFRAME，见 ADR-0010）
+  SnapController.cs      Aero Snap：贴边左右半屏、贴顶最大化、从最大化拖离还原（自实现，见 ADR-0010）
   ChromeTooltip.cs       工具栏按钮的悬停提示窗（1 秒后显示名字；分层窗口色键透明，不抢焦点）
   FullscreenManager.cs   全屏管理：视频真全屏（Fullscreen API，含标签栏一起隐藏）+ F11 轻量全屏（隐藏菜单/工具栏、最大化），页面内 F11 转发与多窗口状态隔离
   TabManager.cs          标签页与 WebView2 生命周期、右键菜单、图标采集、新标签页渲染、网页缩放 API、内核初始化失败自救
@@ -262,3 +266,4 @@ tests/                   测试与 API 诊断工具（见上表），以及各�
 - [新标签页书签墙-实现说明与边界.md](新标签页书签墙-实现说明与边界.md) —— 书签墙的实现方式、配置项与边界清单
 - [docs/adr/0008-startup-page-vs-new-tab.md](docs/adr/0008-startup-page-vs-new-tab.md) —— 为什么启动页与「＋新标签」必须分开，以及默认值为何保持空白页
 - [docs/adr/0009-exit-criteria-and-single-association.md](docs/adr/0009-exit-criteria-and-single-association.md) —— 退出判据为何只看浏览器窗口；「打开方式」为何必须只有一个实现
+- [docs/adr/0010-self-implemented-aero-snap.md](docs/adr/0010-self-implemented-aero-snap.md) —— 为什么 Aero Snap 必须自己做；玻璃常驻与分屏如何兼得

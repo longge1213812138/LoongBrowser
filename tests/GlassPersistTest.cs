@@ -1,13 +1,14 @@
 // GlassPersistTest.cs —— 玻璃常驻回归（锁定"失焦丢玻璃"这个 bug）
 //
-// 症状（用户报告）：点工具/书签等菜单、切换到其他应用、甚至点一下桌面，毛玻璃就消失。
-// 根因（二分定位，2026-10）：窗口补了 WS_THICKFRAME 之后，DWM 在窗口失活时停用 Acrylic，
-//   整个窗口变成不透明纯色块；重新 Apply / 强制重绘 / 重设边框都无法恢复。
-//   对照实验：同一窗口去掉 WS_THICKFRAME，失焦后玻璃完好。
+// 症状（用户报告）：点菜单、切到其他应用、甚至点一下桌面，毛玻璃就消失。
+// 根因（复测于 2026-10，见 docs/adr/0010 与 tests\GlassMatrix.cs）：
+//   只要窗口样式里出现 WS_THICKFRAME，DWM 就会在窗口失焦时停用 Acrylic；
+//   失焦后重新 Apply / Clear+Apply / 强制重绘都救不回来（sat 恒为 0，回前台才恢复）。
+//   四种边框形态（None / Sizable / NCCALCSIZE 归零）都绕不过去。
 //
-// 这个测试锁两件事：
-//   A. 窗口样式里不能有 WS_THICKFRAME（有它则失焦必丢玻璃）
-//   B. 边缘缩放仍然可用 —— 改为 WindowResizer 自己实现，不依赖系统缩放循环
+// 所以这个测试锁的是那条不能碰的红线：
+//   A. 窗口样式里不能有 WS_THICKFRAME；
+//   B. 缩放/分屏改用不依赖它的方案（WM_NCHITTEST + SnapController），能力不能少。
 using System;
 using System.Drawing;
 using System.Reflection;
@@ -56,9 +57,9 @@ namespace LoongBrowser
                 Judge("A2 仍保留最小化按钮语义", (cp.Style & WindowResizer.WS_MINIMIZEBOX) != 0, "");
                 Judge("A3 仍保留最大化按钮语义", (cp.Style & WindowResizer.WS_MAXIMIZEBOX) != 0, "");
 
-                // ---------- B. 边缘命中 ----------
+                // ---------- B. 不靠系统样式，能力也不能少 ----------
                 _sb.AppendLine();
-                _sb.AppendLine("-- B. 边缘命中（自实现缩放） --");
+                _sb.AppendLine("-- B. 缩放与分屏能力（不依赖 WS_THICKFRAME） --");
                 var size = new Size(1000, 700);
                 Judge("B1 左边中 → Edge.Left", Hit(0, 350, size) == WindowResizer.Edge.Left, Hit(0, 350, size));
                 Judge("B2 右边中 → Edge.Right", Hit(999, 350, size) == WindowResizer.Edge.Right, Hit(999, 350, size));
@@ -74,47 +75,20 @@ namespace LoongBrowser
                 Judge("B9 边缘带宽 = VistaTheme.ResizeBorderWidth",
                       VistaTheme.ResizeBorderWidth == 6, VistaTheme.ResizeBorderWidth);
 
-                // ---------- C. 一次拖拽真的改变矩形 ----------
-                _sb.AppendLine();
-                _sb.AppendLine("-- C. 拖拽会话（直接作用于窗口 Bounds） --");
-                form.Bounds = new Rectangle(100, 100, 800, 600);
+                // 边缘 → HT 值：系统据此启动真正的缩放循环
+                Judge("B10 左边 → HTLEFT", WindowResizer.HitTestCode(WindowResizer.Edge.Left) == WindowResizer.HTLEFT, "");
+                Judge("B11 右下角 → HTBOTTOMRIGHT",
+                      WindowResizer.HitTestCode(WindowResizer.Edge.Bottom | WindowResizer.Edge.Right)
+                          == WindowResizer.HTBOTTOMRIGHT, "");
 
-                Cursor.Position = new Point(100, 400);
-                var left = new WindowResizer.DragSession(
-                    form, WindowResizer.Edge.Left, form.Bounds, new Point(100, 400), new Size(300, 200));
-                left.Update(new Point(40, 400));               // 左移 60
-                Judge("C1 拖左边 60px → 宽度 +60、左沿 -60",
-                      form.Bounds.Width == 860 && form.Bounds.Left == 40, form.Bounds.ToString());
-
-                var right = new WindowResizer.DragSession(
-                    form, WindowResizer.Edge.Right, form.Bounds, new Point(0, 400), new Size(300, 200));
-                right.Update(new Point(120, 400));             // 右移 120
-                Judge("C2 拖右边 120px → 宽度 +120、左沿不变",
-                      form.Bounds.Width == 980 && form.Bounds.Left == 40, form.Bounds.ToString());
-
-                // 最小尺寸钳制：往左拖到宽度低于 MinimumSize
-                var clamp = new WindowResizer.DragSession(
-                    form, WindowResizer.Edge.Right, form.Bounds, new Point(0, 400), form.MinimumSize);
-                clamp.Update(new Point(-5000, 400));
-                Judge("C3 宽度被 MinimumSize 钳住", form.Bounds.Width == form.MinimumSize.Width,
-                      form.Bounds.Width + " vs " + form.MinimumSize.Width);
-
-                // 向上拖到高度低于 MinimumSize
-                form.Bounds = new Rectangle(100, 100, 900, 700);
-                var clampV = new WindowResizer.DragSession(
-                    form, WindowResizer.Edge.Bottom, form.Bounds, new Point(0, 0), form.MinimumSize);
-                clampV.Update(new Point(0, -5000));
-                Judge("C4 高度被 MinimumSize 钳住", form.Bounds.Height == form.MinimumSize.Height,
-                      form.Bounds.Height + " vs " + form.MinimumSize.Height);
-
-                // 角落：同时改宽高
-                form.Bounds = new Rectangle(100, 100, 900, 700);
-                var corner = new WindowResizer.DragSession(
-                    form, WindowResizer.Edge.Bottom | WindowResizer.Edge.Right,
-                    form.Bounds, new Point(0, 0), new Size(300, 200));
-                corner.Update(new Point(50, 40));
-                Judge("C5 右下角同时改宽高",
-                      form.Bounds.Width == 950 && form.Bounds.Height == 740, form.Bounds.ToString());
+                // 贴边分屏（自实现，见 SnapController）
+                var work = new Rectangle(0, 0, 1920, 1040);
+                Judge("B12 贴左边缘 → 左半屏",
+                      SnapController.ZoneAt(new Point(2, 500), work) == SnapController.Zone.Left, "");
+                Judge("B13 左半屏宽度 = 一半",
+                      SnapController.BoundsFor(SnapController.Zone.Left, work).Width == 960, "");
+                Judge("B14 贴顶 → 最大化",
+                      SnapController.ZoneAt(new Point(900, 2), work) == SnapController.Zone.Maximize, "");
 
                 form.Close();
             }

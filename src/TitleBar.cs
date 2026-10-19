@@ -76,6 +76,18 @@ namespace LoongBrowser
             return HotPart.None;
         }
 
+        /// <summary>
+        /// 这个位置能不能交给系统做"拖动窗口"（HTCAPTION）。
+        /// 三个标题栏按钮上不能交出去 —— 交出去就成了"拖按钮 = 拖窗口"。
+        /// 宿主用它回答 WM_NCHITTEST，从而获得原生的拖动、双击最大化、贴边分屏。
+        /// </summary>
+        public bool CanStartSystemDrag(Point clientPoint)
+        {
+            if (!Enabled || !Visible) return false;
+            if (clientPoint.X < 0 || clientPoint.Y < 0 || clientPoint.X >= Width || clientPoint.Y >= Height) return false;
+            return HitTest(clientPoint) == HotPart.None;
+        }
+
         // ---------- 绘制 ----------
 
         protected override void OnPaintBackground(PaintEventArgs e)
@@ -164,6 +176,13 @@ namespace LoongBrowser
         protected override void OnMouseMove(MouseEventArgs e)
         {
             base.OnMouseMove(e);
+
+            if (_drag != null)
+            {
+                _drag.Update(Cursor.Position);
+                return;
+            }
+
             HotPart h = HitTest(e.Location);
             if (h != _hot)
             {
@@ -201,8 +220,17 @@ namespace LoongBrowser
                 return;
             }
 
-            // 空白处拖动窗口
-            DragWindow();
+            // 空白处拖动窗口（自实现，含吸附）
+            DragWindow(e);
+        }
+
+        protected override void OnMouseUp(MouseEventArgs e)
+        {
+            base.OnMouseUp(e);
+            if (_drag == null) return;
+            _drag.End(Cursor.Position);
+            _drag = null;
+            Capture = false;
         }
 
         protected override void OnMouseDoubleClick(MouseEventArgs e)
@@ -216,13 +244,25 @@ namespace LoongBrowser
             Invalidate();
         }
 
-        /// <summary>用系统消息实现窗口拖动（自带 Snap 行为）</summary>
-        private void DragWindow()
+        /// <summary>
+        /// 开始拖动窗口。
+        ///
+        /// 不用 SendMessage(HTCAPTION) 交给系统：那条路要求窗口有系统非客户区（即
+        /// WS_THICKFRAME），而实测只要带上这一位，失焦时 Acrylic 必被 DWM 停用
+        /// （见 docs/adr/0010）。所以拖动与吸附都由 SnapDragSession 自己实现，
+        /// 行为按 Windows 规范复刻：贴左/右半屏、贴顶最大化、从最大化拖离即还原。
+        /// </summary>
+        private void DragWindow(MouseEventArgs e)
         {
             if (_form == null) return;
-            ReleaseCapture();
-            SendMessage(_form.Handle, WM_NCLBUTTONDOWN, HTCAPTION, 0);
+            _drag = new SnapDragSession(_form, Cursor.Position);
+            Capture = true;          // 捕获鼠标，移出标题栏也能继续拖动
         }
+
+        /// <summary>拖动会话（为 null 表示没在拖）</summary>
+        public SnapDragSession DragSession { get { return _drag; } }
+
+        private SnapDragSession _drag;
 
         private const int WM_NCLBUTTONDOWN = 0xA1;
         private const int HTCAPTION = 0x2;

@@ -132,14 +132,20 @@ namespace LoongBrowser
             // 首帧仍然是不透明的一块（实测见 GlassManager 顶部注释）。改到 OnShown。
         }
 
-        // ---------- 无边框窗口的缩放边框 ----------
+        // ---------- 无边框窗口的系统级缩放 / 拖动 / 分屏 ----------
         //
-        // 刻意**不**加 WS_THICKFRAME：实测（二分定位）它会让 DWM 在窗口失活时停用
-        // Acrylic —— 一旦失焦（点菜单、切到别的应用、点桌面），整个窗口变成不透明
-        // 纯色块，玻璃消失且无法恢复。用户要求"玻璃常驻、不做降级"，所以缩放改由
-        // 本类自己实现（见 WindowResizer 顶部说明与 ADR-0007）。
+        // 两个事实一起成立，方案就是中间那条路：
+        //   · 加 WS_THICKFRAME 会让 DWM 在**失焦时停用 Acrylic**（前台 sat=23 → 失焦 sat=0，
+        //     见 docs/adr/0010 的复测）：不能加。
+        //   · 系统缩放/拖动/分屏并不要求这个样式位：只要窗口对 WM_NCHITTEST 回答
+        //     HTLEFT/HTRIGHT/…/HTCAPTION，系统就会启动自己的尺寸循环与拖动循环。
+        //
+        // 于是：样式里不出现 WS_THICKFRAME（玻璃安全），
+        //       命中测试交给系统（拖边缩放、双击标题栏、拖边 Aero Snap 分屏全部是原生行为）。
 
-        /// <summary>保留最小化 / 最大化按钮语义（不加 WS_THICKFRAME）</summary>
+        private const int WM_NCHITTEST = 0x0084;
+
+        /// <summary>保留最小化 / 最大化按钮语义（仍不加 WS_THICKFRAME）</summary>
         protected override CreateParams CreateParams
         {
             get
@@ -148,6 +154,64 @@ namespace LoongBrowser
                 cp.Style |= WindowResizer.WS_MINIMIZEBOX | WindowResizer.WS_MAXIMIZEBOX;
                 return cp;
             }
+        }
+
+        /// <summary>
+        /// 让系统来判定"这是边框还是客户区"。
+        /// 返回 HT* 后，拖拽缩放、贴边分屏、双击标题栏最大化都由 Windows 自己完成 ——
+        /// 这正是用户要的"按 Windows 规范"；自己改 Bounds 永远做不到 Snap 预览。
+        /// </summary>
+        protected override void WndProc(ref Message m)
+        {
+            if (m.Msg == WM_NCHITTEST)
+            {
+                base.WndProc(ref m);
+                // 只在系统判成"客户区"时改写；系统已经给出边框结果就尊重它
+                if ((int)m.Result == WindowResizer.HTCLIENT)
+                {
+                    int code = SystemHitTest(PointToClient(PointToScreenOfLParam(m.LParam)));
+                    if (code != WindowResizer.HTCLIENT)
+                    {
+                        m.Result = (IntPtr)code;
+                        return;
+                    }
+                }
+                return;
+            }
+            base.WndProc(ref m);
+        }
+
+        /// <summary>把 WM_NCHITTEST 的 lParam 拆成屏幕坐标</summary>
+        private static Point PointToScreenOfLParam(IntPtr lParam)
+        {
+            long v = lParam.ToInt64();
+            int x = (short)(v & 0xFFFF);
+            int y = (short)((v >> 16) & 0xFFFF);
+            return new Point(x, y);
+        }
+
+        /// <summary>
+        /// 客户区坐标 → HT 值。边缘带交给缩放；标题栏空白处交给拖动。
+        /// 最大化时不留缩放边（与原生窗口一致：最大化后边不可拖）。
+        /// </summary>
+        private int SystemHitTest(Point client)
+        {
+            // F11 轻量全屏时外壳被藏起来了，没有可拖的标题栏，也不该有缩放边
+            if (FullscreenManager.IsUiFullscreen(this)) return WindowResizer.HTCLIENT;
+            if (WindowState == FormWindowState.Maximized) return WindowResizer.HTCLIENT;
+
+            WindowResizer.Edge edge = WindowResizer.HitTest(client, ClientSize);
+            if (edge != WindowResizer.Edge.None) return WindowResizer.HitTestCode(edge);
+
+            // 标题栏（自绘）空白处 → 由系统接管拖动，从而获得 Snap / 双击最大化 /
+            // 拖到顶部最大化等原生行为。三个按钮由 TitleBar 自己处理，这里要避开。
+            if (_titleBar != null && _titleBar.Visible)
+            {
+                Point onTitle = _titleBar.PointToClient(PointToScreen(client));
+                if (_titleBar.CanStartSystemDrag(onTitle))
+                    return WindowResizer.HTCAPTION;
+            }
+            return WindowResizer.HTCLIENT;
         }
 
         /// <summary>窗口已显示且首帧画完：此刻应用 Acrylic 才能一出现就是玻璃</summary>
@@ -168,63 +232,16 @@ namespace LoongBrowser
             };
         }
 
-        // ---------- 边缘拖拽缩放（自实现） ----------
-
-        private WindowResizer.DragSession _resizeSession;
-        private WindowResizer.Edge _hotEdge = WindowResizer.Edge.None;
-
-        protected override void OnMouseDown(MouseEventArgs e)
+        // ---------- 尺寸变化后的重绘 ----------
+        //
+        // 缩放循环现在由系统驱动（见上面的 WndProc），我们不再自己改 Bounds。
+        // 但玻璃区的像素只能靠"清回透明"来更新，所以尺寸变化后仍要整窗重绘，
+        // 否则旧宽度上的地址栏白条会留在窗口表面。
+        protected override void OnResize(EventArgs e)
         {
-            base.OnMouseDown(e);
-            if (e.Button != MouseButtons.Left || WindowState == FormWindowState.Maximized) return;
-
-            WindowResizer.Edge edge = WindowResizer.HitTest(e.Location, ClientSize);
-            if (edge == WindowResizer.Edge.None) return;
-
-            _resizeSession = new WindowResizer.DragSession(
-                this, edge, Bounds, Cursor.Position, MinimumSize);
-            Capture = true;
-        }
-
-        protected override void OnMouseMove(MouseEventArgs e)
-        {
-            base.OnMouseMove(e);
-
-            if (_resizeSession != null)
-            {
-                _resizeSession.Update(Cursor.Position);
-                return;
-            }
-
-            // 悬停反馈：边缘带上的指针形状
-            WindowResizer.Edge edge = WindowState == FormWindowState.Maximized
-                ? WindowResizer.Edge.None
-                : WindowResizer.HitTest(e.Location, ClientSize);
-            if (edge != _hotEdge)
-            {
-                _hotEdge = edge;
-                Cursor = WindowResizer.CursorFor(edge);
-            }
-        }
-
-        protected override void OnMouseUp(MouseEventArgs e)
-        {
-            base.OnMouseUp(e);
-            if (_resizeSession == null) return;
-            _resizeSession = null;
-            Capture = false;
+            base.OnResize(e);
+            if (WindowState == FormWindowState.Minimized) return;
             ApplyGlassToSurface();
-        }
-
-        protected override void OnMouseLeave(EventArgs e)
-        {
-            base.OnMouseLeave(e);
-            if (_resizeSession != null) return;
-            if (_hotEdge != WindowResizer.Edge.None)
-            {
-                _hotEdge = WindowResizer.Edge.None;
-                Cursor = Cursors.Default;
-            }
         }
 
         /// <summary>整窗重绘一遍：标题栏与外壳各自先清面再画前景</summary>

@@ -179,6 +179,46 @@ DWM 在窗口失活时停用 Acrylic：点菜单、切应用、点桌面之后�
 两个 bug 都栽在同一件事上：**用"我写的注册表键/我认识的窗口"当事实**。
 事实要用系统自己的口径去问 —— 窗口存亡问消息循环，菜单条目问 Explorer 的枚举接口。
 
+## 二·十、未提交：缩放/分屏回归 Windows 规范（2026-10-19）
+
+**用户报的问题**：最大化/还原逻辑混乱、拉到屏幕边缘没有分屏、缺多窗口分屏；
+并且明确要求「不要做取舍，我全都要」（分屏和玻璃常驻都要）。
+
+### 先复测，别信旧结论
+
+ADR-0007 说 `WS_THICKFRAME` 会让失焦丢玻璃。用条纹背板 + 饱和度判据重测，**结论成立**，
+而且比当年更狠：四种边框形态（None / Sizable / NCCALCSIZE 归零）全部失焦归零，
+失焦后重新 `Apply` / `Clear`+`Apply`+重绘**都救不回来**，只有切回前台才恢复（sat 46→0→46）。
+
+又单独验证了「系统 Snap 需不需要这一位」：不带 `WS_THICKFRAME` 的窗口，
+即使 `WM_NCHITTEST` 正确回答 `HTCAPTION`，拖到边缘也**不会**被吸附。
+所以「交给系统做 Snap」与「玻璃常驻」确实互斥 —— 但不是没有第三条路。
+
+### 做法：不碰红线，自己复刻 Snap
+
+- 窗口样式**仍然不含** `WS_THICKFRAME`（玻璃安全）；
+- 缩放：`WM_NCHITTEST` 对四边四角回答 `HTLEFT/…`，由**系统**起缩放循环（这条路不需要那一位）；
+- 吸附：`src/SnapController.cs` 自己实现 —— 贴左右半屏、贴顶最大化、从最大化拖离还原；
+- 拖动：`SnapDragSession` 接管标题栏拖动（不再用 `HTCAPTION` 交给系统，因为系统拖动不会吸附）；
+- 双击标题栏最大化/还原保留。
+
+### 实测（真实鼠标，`SendInput` + 真实光标）
+
+```
+拖到左边缘 → L=0     W=1280 H=1392   （正好左半屏）
+拖到右边缘 → L=1280  W=1280 H=1392   （正好右半屏）
+拖到顶部   → L=0 T=0 W=2560 H=1440   （最大化）
+分屏 + 失焦 → 玻璃 sat=44            （旧配置下是 0）
+```
+
+### 测试
+
+`tests\run_snaptest.ps1`（19 项）+ `tests\run_snap_test.ps1`（12 项），
+并重写了 `run_glass_persist_test.ps1`（17 项）—— 它原来断言的是已被删除的
+`WindowResizer.DragSession`，现在改为断言「样式不含 THICKFRAME + 缩放/吸附能力仍在」。
+
+详见 `docs/adr/0010-self-implemented-aero-snap.md`。
+
 ## 三、本机环境注意事项（重要，接手必读）
 
 1. **构建命令**：这台机器的执行策略会拦 `powershell -File build.ps1`，必须用
@@ -186,10 +226,20 @@ DWM 在窗口失活时停用 Acrylic：点菜单、切应用、点桌面之后�
 
 2. **沙箱 ACL 隐患（本机特有，会复发）**：`Desktop\LoongBrowser-master` 曾被 Codex 沙箱
    打上 `Low 完整性标签 + Everyone DENY(DC)`，导致普通权限双击 exe 时 WebView2 内核读不到
-   宿主 exe 旁的文件，报 `0x800700AA`（管理员运行正常）。已于 2026-10-18 修复
-   （`icacls /remove:d Everyone /t` + `/setintegritylevel "(OI)(CI)M" /t`，备份在
-   `Desktop\LoongBrowser-acl-backup.txt`）。**若复发**（普通双击报错、管理员正常），同样两条命令修复；
-   根治办法是把项目移出沙箱管辖目录（如 `C:\dev\`）。
+   宿主 exe 旁的文件，报 `0x800700AA`（管理员运行正常）。已于 2026-10-18 修复。
+
+   **若复发**（症状：普通双击报错、管理员运行正常），跑这两条即可：
+
+   ```powershell
+   icacls "C:\Users\91533\Desktop\LoongBrowser-master" /remove:d Everyone /t
+   icacls "C:\Users\91533\Desktop\LoongBrowser-master" /setintegritylevel "(OI)(CI)M" /t
+   ```
+
+   修复后用 `icacls <目录>` 自检：应看到 `Medium Mandatory Level`，且没有 `Everyone` 的 DENY 项。
+
+   当初的 `Desktop\LoongBrowser-acl-backup.txt`（`icacls /save` 导出的整树安全描述符）
+   已在 2026-10-19 清理 —— 它是二进制形态的文本，真出事时不便逐项对照；真正管用的是上面两条命令。
+   根治办法：把项目移出沙箱管辖目录（如 `C:\dev\`）。
 
 3. **实机验证方式**：本 agent 环境的子进程会继承文件沙箱限制，`%TEMP%`/`%LOCALAPPDATA%`
    写入被拒，探针结论不可信。需要真实双击验证时，让用户操作或用

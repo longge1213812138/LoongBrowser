@@ -36,6 +36,15 @@ _Avoid_: Vista 玻璃, DWM 模糊, blur behind, SetWindowCompositionAttribute
 无边框窗口四周那圈 6px 的边带；它同时是拖拽缩放的热区与玻璃区，内容控件一律缩在它内侧。缩放在托管代码里自己实现，不依赖系统缩放。
 _Avoid_: 边框, 描边, 拖拽边
 
+**Snap**:
+把窗口拖到屏幕边缘/顶部后自动落位成半屏或最大化。本项目由 `SnapController` 自己实现，
+不依赖系统 Snap（那需要 `WS_THICKFRAME`，与 Glass Persistence 互斥）。
+_Avoid_: 吸附, 分屏（泛指多窗口平铺时）
+
+**SnapDragSession**:
+标题栏拖动会话：跟随鼠标、判定吸附区、松手落位。它取代了 `HTCAPTION` 交给系统拖动的那条路。
+_Avoid_: 拖拽器, 移动会话
+
 **Glass Persistence**:
 玻璃在窗口失活后仍然存在。任何会让 DWM 在失活时停用 Acrylic 的窗口样式（尤其是 `WS_THICKFRAME`）都与它互斥。
 _Avoid_: 玻璃常开, 不降级
