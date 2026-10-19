@@ -79,6 +79,13 @@ namespace LoongBrowser
         /// <summary>标签关闭请求（参数为标签索引）</summary>
         public event Action<int> TabCloseRequested;
 
+        /// <summary>
+        /// 某个顶层菜单即将展开（下拉面板构造之前）。
+        /// 宿主用它把"弹出来才看得见的状态"（例如全屏勾选）在展开前算准 ——
+        /// 全屏可以从网页里触发，宿主收不到点击，靠事件推送会漏。
+        /// </summary>
+        public event Action MenuOpening;
+
         public GlassChrome()
         {
             SetStyle(ControlStyles.OptimizedDoubleBuffer
@@ -684,6 +691,9 @@ namespace LoongBrowser
 
             ChromeMenuItem m = _topMenus[index];
             if (!m.HasChildren) return;
+
+            // 展开前先让宿主把动态状态刷准（勾选、置灰）
+            if (MenuOpening != null) { try { MenuOpening(); } catch (Exception) { } }
 
             _dropDown = new ChromeDropDown(m.Children, 170);
             Point screen = PointToScreen(new Point(m.LayoutRect.X, m.LayoutRect.Bottom));

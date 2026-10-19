@@ -1,6 +1,6 @@
 # PROJECT_STATE — LoongBrowser 交接材料
 
-> 更新：2026-10-19 02:05 ｜ 状态：**玻璃常驻、边缘缩放、工具栏悬停提示已实现，待用户实机确认**
+> 更新：2026-10-19 20:40 ｜ 状态：**玻璃常驻、边缘缩放/分屏、工具栏悬停提示、两套全屏已实现，待用户实机确认**
 > 工作目录：`C:\Users\91533\Desktop\LoongBrowser-master` ｜ 分支：`main` ｜ HEAD：`4eec1c2`
 > 权威资料：功能描述以 `README.md` 为准；本文档只记"接手需要知道、README 没写"的事。
 
@@ -218,6 +218,67 @@ ADR-0007 说 `WS_THICKFRAME` 会让失焦丢玻璃。用条纹背板 + 饱和度
 `WindowResizer.DragSession`，现在改为断言「样式不含 THICKFRAME + 缩放/吸附能力仍在」。
 
 详见 `docs/adr/0010-self-implemented-aero-snap.md`。
+
+## 二·十一、未提交：视频真全屏与网页全屏拆成两套（2026-10-19）
+
+**用户报的问题**：视频全屏播放有边框；要求“实现视频播放真全屏，和网页全屏区分开，做两套方案”。
+
+### 根因是探针量出来的，不是看出来的
+
+在真实 B 站视频页用 CDP（带 `userGesture`）调 `<video>.requestFullscreen()`，全屏那一刻打印：
+
+```
+Form.Bounds             = {0,0,2560,1440}    窗口已经铺满整屏
+Form.Padding            = {6,6,6,6}          但内边距还在
+WebView2 client(screen) = {6,6,2548,1428}    视频少了 12x12
+```
+
+`MainForm` 给无边框窗口留了一圈 6px 缩放热区当 `Padding`（ADR-0007），
+但**进全屏时没归零**，`Dock.Fill` 的 WebView2 被挤在里面，四周露出 6px 玻璃
+（`OnPaint` 还在上面画了 1px 白高光）—— 就是用户看到的那圈边框。
+
+### 两套的分工
+
+| | 视频真全屏 `Video` | 网页全屏 `Page` |
+|---|---|---|
+| 触发 | 网页 Fullscreen API | `F11` / 「查看 → 网页全屏」 |
+| `Padding` | 归零 | 归零 |
+| WebView2 | 摘出，直接挂 Form | 同样摘出（见下） |
+| 自绘标题栏 | 隐藏 | **保留** |
+| 窗口 | `Screen.Bounds`（含任务栏）+ 置顶 | 最大化到 `WorkingArea`（任务栏可见），不置顶 |
+
+`FullscreenKind` 是**推导**出来的（`Video > Page > None`），不另存一份 ——
+两套可叠加，存一份必漂移：从视频全屏退出后网页全屏其实还在。
+
+网页全屏**也得搬**（原以为不用，实测推翻）：只藏外壳时 webview 是 `{4,35,2552,1353}`，
+工作区却是 2560x1392 —— `TabControl` 自带 4px 边框，标签头也还占着 35px。
+抬到 Form 上之后是 `{0,30,2560,1362}`，标题栏之下铺满。
+
+两套共用 `HostView`/`UnhostView` 并带**引用计数**：两套可叠加，先进网页全屏再进视频全屏时，
+第二次不能再"记录原位置"（那时原位置已是 Form），退出时也只该由最后一次退出负责放回。
+
+### 顺带修掉一个真实缺陷（测试抓到的）
+
+新测试的 C10 断言“最大化不盖任务栏”失败：窗口 `{0,0,2560,1440}` vs 工作区 `{0,0,2560,1392}`。
+`FormBorderStyle.None` 让窗口失去系统的最大化边界约束（系统按有边框窗口算补偿，我们没有那些非客户区）。
+之前的 `run_snap_test` C1 用 `>=` 断言，把这个缺陷放过去了。
+修法：处理 `WM_GETMINMAXINFO`，把 `ptMaxSize`/`ptMaxPosition` 钉在工作区。
+
+### 实测（真实 B 站 + 真实内核）
+
+```
+修复前  WebView2 client(screen) = {6,6,2548,1428}   四周 6px 玻璃边
+修复后  WebView2 client(screen) = {0,0,2560,1440}   真正铺满整屏
+```
+
+截图（2560x1440，B 站视频页）见提交说明。左右黑边是 4:3 视频在 16:9 屏上的 letterbox，属内容本身。
+
+### 测试
+
+新增 `tests\run_fullscreen_test.ps1`（47 项，真实 `MainForm` + 真实 WebView2）：
+两套各自的形态、`Padding`、可见性、窗口范围、置顶、WebView2 归属，叠加与逐项还原。
+`run_fullscreen_e2e.ps1` 从 38 项增到 39 项（补 D15：网页全屏也退出后 WebView2 才回标签页）。
+共 610 项用例。详见 `docs/adr/0011-two-kinds-of-fullscreen.md`。
 
 ## 三、本机环境注意事项（重要，接手必读）
 

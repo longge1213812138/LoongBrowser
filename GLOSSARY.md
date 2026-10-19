@@ -36,6 +36,20 @@ _Avoid_: Vista 玻璃, DWM 模糊, blur behind, SetWindowCompositionAttribute
 无边框窗口四周那圈 6px 的边带；它同时是拖拽缩放的热区与玻璃区，内容控件一律缩在它内侧。缩放在托管代码里自己实现，不依赖系统缩放。
 _Avoid_: 边框, 描边, 拖拽边
 
+**Video Fullscreen**（视频真全屏）:
+网页通过标准 Fullscreen API 触发的全屏（B 站播放器「全屏」按钮）。窗口铺满整块屏幕（含任务栏）、置顶、
+缩放边带 `Padding` 归零，WebView2 从标签页摘出直接挂到 Form 上。
+_Avoid_: 视频全屏, 播放器全屏, 真全屏（不带限定词时指本项）
+
+**Page Fullscreen**（网页全屏）:
+宿主入口（`F11` / 「查看 → 网页全屏」）触发的全屏。外壳让位、网页铺满客户区，但自绘标题栏保留、
+窗口只最大化到工作区（任务栏可见）、不置顶，WebView2 留在原标签页。
+_Avoid_: 轻量全屏, F11 全屏, 伪全屏
+
+**FullscreenKind**:
+两套全屏的形态枚举 `None / Video / Page`。取值由窗口状态**推导**而非另存一份，优先级 `Video > Page > None`。
+_Avoid_: 全屏状态, 全屏模式
+
 **Snap**:
 把窗口拖到屏幕边缘/顶部后自动落位成半屏或最大化。本项目由 `SnapController` 自己实现，
 不依赖系统 Snap（那需要 `WS_THICKFRAME`，与 Glass Persistence 互斥）。

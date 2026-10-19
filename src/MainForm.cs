@@ -27,6 +27,9 @@ namespace LoongBrowser
         private ChromeMenuItem _miZoomReset;
         private ChromeMenuItem _miZoomList;
 
+        // ---------- 网页全屏（与视频真全屏是两套，见 FullscreenManager） ----------
+        private ChromeMenuItem _miPageFullscreen;
+
         public MainForm(string initialUrl)
         {
             // 玻璃层的前置条件：必须在句柄创建之前设好绘制样式。
@@ -100,6 +103,8 @@ namespace LoongBrowser
             _chrome.AttachTabs(_tabs);
             _chrome.SetMenus(BuildMenus());
             _chrome.SetButtons(BuildToolButtons());
+            // 菜单弹出前把动态状态刷准（例如全屏勾选）
+            _chrome.MenuOpening += delegate { RefreshFullscreenUi(); };
 
             // 书签增删后刷新正在显示的新标签页（书签墙）
             _bookmarks.Changed += delegate
@@ -144,6 +149,50 @@ namespace LoongBrowser
         //       命中测试交给系统（拖边缩放、双击标题栏、拖边 Aero Snap 分屏全部是原生行为）。
 
         private const int WM_NCHITTEST = 0x0084;
+        private const int WM_GETMINMAXINFO = 0x0024;
+
+        /// <summary>MINMAXINFO 里的点（WinUser.h）</summary>
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        private struct NativePoint
+        {
+            public int X;
+            public int Y;
+        }
+
+        /// <summary>WM_GETMINMAXINFO 的结构体（WinUser.h）</summary>
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        private struct MinMaxInfo
+        {
+            public NativePoint Reserved;
+            public NativePoint MaxSize;
+            public NativePoint MaxPosition;
+            public NativePoint MinTrackSize;
+            public NativePoint MaxTrackSize;
+        }
+
+        /// <summary>
+        /// 无边框窗口最大化时会盖住任务栏。
+        /// 原因：系统的最大化矩形是按"有边框窗口"算的 —— 它给标题栏与边框留了补偿，
+        /// 而我们没有那些非客户区，补偿落空，窗口于是长到整块屏幕。
+        /// 这里直接把最大化矩形钉在**工作区**上（Win32 的标准做法，见
+        /// WM_GETMINMAXINFO 的 ptMaxSize / ptMaxPosition），任务栏与多显示器都交给系统算。
+        /// </summary>
+        private void ConstrainMaximizedBounds(ref Message m)
+        {
+            var info = (MinMaxInfo)System.Runtime.InteropServices.Marshal.PtrToStructure(
+                m.LParam, typeof(MinMaxInfo));
+
+            Rectangle work = Screen.FromHandle(Handle).WorkingArea;
+            // 位置相对"窗口将要所在的那块屏幕"，用屏幕坐标换算
+            Rectangle screen = Screen.FromHandle(Handle).Bounds;
+            info.MaxPosition.X = work.Left - screen.Left;
+            info.MaxPosition.Y = work.Top - screen.Top;
+            info.MaxSize.X = work.Width;
+            info.MaxSize.Y = work.Height;
+
+            System.Runtime.InteropServices.Marshal.StructureToPtr(info, m.LParam, false);
+            m.Result = IntPtr.Zero;
+        }
 
         /// <summary>保留最小化 / 最大化按钮语义（仍不加 WS_THICKFRAME）</summary>
         protected override CreateParams CreateParams
@@ -163,6 +212,12 @@ namespace LoongBrowser
         /// </summary>
         protected override void WndProc(ref Message m)
         {
+            if (m.Msg == WM_GETMINMAXINFO)
+            {
+                base.WndProc(ref m);
+                ConstrainMaximizedBounds(ref m);
+                return;
+            }
             if (m.Msg == WM_NCHITTEST)
             {
                 base.WndProc(ref m);
@@ -196,8 +251,10 @@ namespace LoongBrowser
         /// </summary>
         private int SystemHitTest(Point client)
         {
-            // F11 轻量全屏时外壳被藏起来了，没有可拖的标题栏，也不该有缩放边
-            if (FullscreenManager.IsUiFullscreen(this)) return WindowResizer.HTCLIENT;
+            // 两种全屏都不该有缩放边与拖动热区：
+            //   · 网页全屏：外壳被藏起来了，没有可拖的标题栏
+            //   · 视频真全屏：整块屏幕都是视频，拖边会把视频窗口缩回去
+            if (FullscreenManager.IsAnyFullscreen(this)) return WindowResizer.HTCLIENT;
             if (WindowState == FormWindowState.Maximized) return WindowResizer.HTCLIENT;
 
             WindowResizer.Edge edge = WindowResizer.HitTest(client, ClientSize);
@@ -394,10 +451,34 @@ namespace LoongBrowser
             _miZoomList = ChromeMenuItem.Sub("缩放（100%）");
             _miZoomList.Children = BuildZoomPresetItems();
 
+            // 网页全屏：与"视频真全屏"是两套（见 FullscreenManager 顶部说明）。
+            // 外壳让位、窗口最大化，标题栏与任务栏保留；F11 是同一条路的键盘入口。
+            // 视频全屏由网页自己触发，宿主不提供菜单项 —— 退出用 Esc 或播放器按钮。
+            _miPageFullscreen = ChromeMenuItem.Item("网页全屏", delegate
+            {
+                FullscreenManager.Toggle(this);
+                RefreshFullscreenUi();
+            });
+            _miPageFullscreen.Shortcut = "F11";
+
             return ChromeMenuItem.Sub("查看(&V)",
                 _miZoomIn, _miZoomOut, _miZoomReset,
                 ChromeMenuItem.Separator(),
-                _miZoomList);
+                _miZoomList,
+                ChromeMenuItem.Separator(),
+                _miPageFullscreen);
+        }
+
+        /// <summary>
+        /// 网页全屏菜单项的勾选状态跟随实际状态。
+        /// 视频真全屏时这一项置灰：那一套由网页自己管，从宿主菜单退出会造成状态打架。
+        /// </summary>
+        private void RefreshFullscreenUi()
+        {
+            if (_miPageFullscreen == null) return;
+            bool video = FullscreenManager.IsFullscreen;
+            _miPageFullscreen.Checked = FullscreenManager.IsPageFullscreen(this);
+            _miPageFullscreen.Enabled = !video;
         }
 
         /// <summary>生成预设档位菜单项（Tag 用比例值表示，放在 Click 闭包里）</summary>

@@ -186,13 +186,17 @@ namespace LoongBrowser
                 Judge("D10 轻量全屏状态被保留：菜单仍隐藏", !_menu.Visible, "Visible=" + _menu.Visible);
                 Judge("D11 轻量全屏状态被保留：窗口仍最大化",
                       _form.WindowState == FormWindowState.Maximized, _form.WindowState.ToString());
-                Judge("D12 WebView2 已放回标签页", _view.Parent == _tabs.SelectedTab,
+                // 退出视频全屏时网页全屏还在 → 网页继续挂在窗口上（两套共用引用计数）。
+                // 放回标签页发生在**网页全屏也退出**之后，见 D14。
+                Judge("D12 网页全屏仍在，WebView2 继续挂在窗口上", _view.Parent == _form,
                       _view.Parent == null ? "null" : _view.Parent.GetType().Name);
 
                 FullscreenManager.Toggle(_form);            // 最后再退轻量全屏
                 Judge("D13 全部还原：菜单可见", _menu.Visible, "");
                 Judge("D14 全部还原：窗口 Normal", _form.WindowState == FormWindowState.Normal,
                       _form.WindowState.ToString());
+                Judge("D15 全部还原：WebView2 回到标签页", _view.Parent == _tabs.SelectedTab,
+                      _view.Parent == null ? "null" : _view.Parent.GetType().Name);
 
                 Finish();
             }
