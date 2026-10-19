@@ -105,6 +105,23 @@ namespace LoongBrowser
                         }
                         break;
 
+                    case "enter":
+                        // 回车符号（↵）：从右上进来、向左拐一个直角的箭头。
+                        // 用键盘符号而不是三角形，是为了和左边的"前进"折线区分开，
+                        // 一眼能认出"这就是回车"
+                        {
+                            float top = cy - s * 0.24f;
+                            float left = cx - s * 0.24f;
+                            // 竖线：右上 → 拐角
+                            g.DrawLine(pen, cx + s * 0.20f, top, cx + s * 0.20f, cy + s * 0.10f);
+                            // 横线：拐角 → 左端
+                            g.DrawLine(pen, cx + s * 0.20f, cy + s * 0.10f, left + s * 0.08f, cy + s * 0.10f);
+                            // 箭头（指向左）
+                            g.DrawLine(pen, left + s * 0.08f, cy + s * 0.10f, left + s * 0.22f, cy - s * 0.04f);
+                            g.DrawLine(pen, left + s * 0.08f, cy + s * 0.10f, left + s * 0.22f, cy + s * 0.24f);
+                        }
+                        break;
+
                     case "zoom":
                         {
                             float r = s * 0.16f;

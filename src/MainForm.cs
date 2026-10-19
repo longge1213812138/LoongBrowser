@@ -537,6 +537,10 @@ namespace LoongBrowser
                 }
                 catch (Exception) { }
             }));
+            // 「前往」：等价于在地址栏按回车。粘贴网址之后不用再回键盘，直接点它就走。
+            // 单独成一个按钮而不是让粘贴顺手导航：粘贴本身不该有副作用
+            // （用户可能只是想把剪贴板内容改一改再走）。
+            list.Add(ChromeToolButton("enter", "前往（同地址栏回车）", delegate { NavigateFromAddress(); }));
             list.Add(SeparatorButton());
             list.Add(ChromeToolButton("star", "收藏本页", delegate { AddBookmark(); }));
             list.Add(ChromeToolButton("translate", "翻译", delegate { TranslateSelectedText(); }));
