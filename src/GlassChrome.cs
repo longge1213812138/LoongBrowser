@@ -30,6 +30,81 @@ namespace LoongBrowser
         public bool Enabled = true;
     }
 
+    /// <summary>
+    /// 地址栏文本框。
+    ///
+    /// 为什么要子类化：窗口开了 Acrylic（<c>DwmExtendFrameIntoClientArea(-1)</c>）之后，
+    /// DWM 把整个客户区当**预乘 alpha** 合成。GDI 的文字绘制（ClearType）只写 RGB、
+    /// 不写 alpha 通道，于是字形核心的纯黑 <c>(0,0,0)</c> 按预乘语义正好等于
+    /// “完全透明”—— 那块像素被当成玻璃露了出来，屏幕上只剩一圈 ClearType 彩边，
+    /// 看起来就是“字很模糊”。实测：地址栏文字最暗像素 rgb(194,212,240)，
+    /// 而同一帧里由 GDI+ 绘制的菜单文字是纯黑 rgb(0,0,0)。
+    ///
+    /// 对照实验（同一窗口，只改 DWM 设置）：
+    ///   extend(-1) + Acrylic → 文字 darkest=209
+    ///   extend(-1) + 无 Acrylic → 文字 darkest=203   （与 Acrylic 本身无关）
+    ///   extend(0)           → 文字 darkest=0         （正常，但玻璃也没了）
+    ///
+    /// 所以不去动玻璃，也不改输入行为：让原生 TextBox 照常画（背景、选区、光标、
+    /// 滚动、输入法全由它管），画完再用 GDI+ 把文字覆盖一遍。GDI+ 会写入
+    /// alpha=255，DWM 就能正常合成出实心黑字。不画阴影。
+    /// </summary>
+    internal class AddressTextBox : TextBox
+    {
+        private const int WM_PAINT = 0x000F;
+
+        protected override void WndProc(ref Message m)
+        {
+            base.WndProc(ref m);
+            if (m.Msg == WM_PAINT) RepaintTextWithGdiPlus();
+        }
+
+        /// <summary>把文字用 GDI+ 重画一遍（逐字符定位，避免整串累计误差）</summary>
+        private void RepaintTextWithGdiPlus()
+        {
+            if (!IsHandleCreated) return;
+            string text = Text;
+            if (string.IsNullOrEmpty(text)) return;
+
+            int selStart = SelectionStart;
+            int selLen = SelectionLength;
+
+            try
+            {
+                using (Graphics g = Graphics.FromHwnd(Handle))
+                {
+                    g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
+
+                    using (var brush = new SolidBrush(ForeColor))
+                    using (var fmt = new StringFormat(StringFormat.GenericTypographic))
+                    {
+                        fmt.FormatFlags |= StringFormatFlags.NoWrap
+                                         | StringFormatFlags.MeasureTrailingSpaces;
+
+                        for (int i = 0; i < text.Length; i++)
+                        {
+                            // 选中的字符由 TextBox 自己画成蓝底白字，别覆盖
+                            if (selLen > 0 && i >= selStart && i < selStart + selLen) continue;
+
+                            char c = text[i];
+                            if (c == '\r' || c == '\n') continue;
+
+                            Point p = GetPositionFromCharIndex(i);
+                            if (p.X < -64 || p.X > ClientSize.Width) continue;
+                            if (p.Y < -Font.Height || p.Y > ClientSize.Height) continue;
+
+                            g.DrawString(c.ToString(), Font, brush, p.X, p.Y, fmt);
+                        }
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                // 覆盖绘制失败不影响输入：最坏也只是回到"字偏淡"的旧样子
+            }
+        }
+    }
+
     /// <summary>自绘的浏览器外壳</summary>
     public class GlassChrome : Control
     {
@@ -65,7 +140,7 @@ namespace LoongBrowser
         private string _tooltipText = "";
 
         // ---------- 地址栏 ----------
-        private readonly TextBox _addressBox;
+        private readonly AddressTextBox _addressBox;
         private bool _addressFocused;
 
         // ---------- 标签头 ----------
@@ -109,7 +184,7 @@ namespace LoongBrowser
             _tooltipWatch.Interval = 150;
             _tooltipWatch.Tick += delegate { WatchTooltip(); };
 
-            _addressBox = new TextBox();
+            _addressBox = new AddressTextBox();
             _addressBox.BorderStyle = BorderStyle.None;
             _addressBox.Font = VistaTheme.UIFont;
             _addressBox.ForeColor = VistaTheme.Text;
