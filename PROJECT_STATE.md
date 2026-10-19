@@ -92,6 +92,32 @@ DWM 在窗口失活时停用 Acrylic：点菜单、切应用、点桌面之后�
 
 测试：`tests\run_tooltip_test.ps1`（17 项）。
 
+## 二·八、未提交：启动页（2026-10-19）
+
+浏览器启动时显示什么，现在可配置；「＋新标签」不受影响。
+
+- `StartupPageSettings` 三选一落盘 `%APPDATA%\LoongBrowser\startup.json`：
+  `blank`（**默认**，与加功能前完全一致）/ `wall`（书签墙）/ `url`（指定网站）；
+- **默认必须是空白页**。一度把默认改成"启动即书签墙"，那是擅自改变既有行为 ——
+  用户要的是"增加自定义能力"，不是"换掉现在的样子"；
+- **两个入口必须分得开**：`NewTab(url, wallTitle)` 多带一个墙标题，
+  「＋新标签」传 null（页头「书签」、标签页仍叫「新标签页」），
+  启动即书签墙时传「启动页」（页头与标签页同名）；
+- `TabInfo.WallTitle` 记住每张墙自己的标题，`RefreshNewTabPages` 按原标题重渲染 ——
+  否则书签一增删，启动页就被刷成「书签」；
+- 地址校验不复用地址栏的"当搜索词"兜底：`javascript:` / `data:` / `vbscript:` 直接拒绝；
+  但 `C:\...` 的盘符与 `example.com:8080` 的 host:port 不能误判成协议（各补了一条用例）；
+- 命令行带了地址（双击 `.html`）时优先于启动页设置，否则双击文件会被启动页抢走；
+- `AppPaths.RootOverride`：测试专用覆盖（生产恒为 null），让端到端测试能把用户数据与
+  内核数据整体挪进临时目录 —— `Environment.GetFolderPath` 不吃 `APPDATA` 环境变量，
+  改环境变量那条路是走不通的。
+
+测试：`tests\run_startup_test.ps1`（85 项）+ `tests\run_startup_e2e.ps1`（20 项）。
+
+顺带修掉一个一直存在的坑：11 个 `tests\run_*.ps1` 还在优先用 legacy `csc.exe`（C# 5），
+而 `src\` 早已用上现代语法，这些套件其实**编译不过**（报 CS1985 `catch` 里 await）。
+已全部改为优先 `tools\roslyn\csc.exe` + `/langversion:latest`。
+
 ## 三、本机环境注意事项（重要，接手必读）
 
 1. **构建命令**：这台机器的执行策略会拦 `powershell -File build.ps1`，必须用

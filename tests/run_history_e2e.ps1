@@ -2,9 +2,14 @@
 # Usage: powershell -File tests\run_history_e2e.ps1
 $root = Split-Path $PSScriptRoot -Parent
 
-$csc = Join-Path $env:WINDIR "Microsoft.NET\Framework64\v4.0.30319\csc.exe"
+# Prefer the vendored Roslyn: legacy csc is C# 5 only and src\ now uses modern syntax
+# (async inside catch, etc.), so the legacy fallback can no longer compile the app sources.
+$csc = Join-Path $root "tools\roslyn\csc.exe"
+if (-not (Test-Path $csc)) { $csc = Join-Path $env:WINDIR "Microsoft.NET\Framework64\v4.0.30319\csc.exe" }
 if (-not (Test-Path $csc)) { $csc = Join-Path $env:WINDIR "Microsoft.NET\Framework\v4.0.30319\csc.exe" }
 if (-not (Test-Path $csc)) { Write-Output "ERROR: csc.exe not found"; exit 1 }
+$langArgs = @()
+if ($csc -like "*roslyn*") { $langArgs += "/langversion:latest" }
 
 $outDir = Join-Path $PSScriptRoot "_out_hist_e2e"
 if (Test-Path $outDir) { Remove-Item $outDir -Recurse -Force }
@@ -31,7 +36,7 @@ Get-ChildItem (Join-Path $root "src") -Filter *.cs |
     ForEach-Object { $src += $_.FullName }
 $src += (Join-Path $PSScriptRoot "HistoryE2ETest.cs")
 
-$cmdArgs = @("/nologo", "/target:exe", "/codepage:65001", "/main:LoongBrowser.HistoryE2ETest", ("/out:" + $exe))
+$cmdArgs = @("/nologo", "/target:exe", "/codepage:65001", "/main:LoongBrowser.HistoryE2ETest") + $langArgs + @("/out:" + $exe)
 foreach ($r in $refs) { $cmdArgs += ("/r:" + $r) }
 foreach ($s in $src) { $cmdArgs += $s }
 

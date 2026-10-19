@@ -17,6 +17,8 @@ namespace LoongBrowser
         public string PendingUrl;
         /// <summary>当前是否显示着"新标签页（书签墙）"，用于书签变化后精准刷新</summary>
         public bool ShowingNewTabPage;
+        /// <summary>这张墙的标题（"书签" / "启动页"）；书签变化后按原标题重渲染，别把启动页刷成新标签页</summary>
+        public string WallTitle;
     }
 
     public class TabManager
@@ -175,12 +177,20 @@ namespace LoongBrowser
             return true;
         }
 
+        /// <summary>新建标签页（墙标题用默认的"书签"）</summary>
+        public void NewTab(string url)
+        {
+            NewTab(url, null);
+        }
+
         /// <summary>
         /// 新建标签页。
-        /// url 为空 → 显示"新标签页（书签墙）"（NewTabPage.Enabled 为 false 时回落到空白页）；
-        /// 传入具体地址 → 直接导航（启动窗口用 NewTabPage.HomeUrl 保持空白主页）。
+        /// url 为空 → 显示书签墙（NewTabPage.Enabled 为 false 时回落到空白页）；
+        /// 传入具体地址 → 直接导航。
+        /// wallTitle 只影响"空 url 时那张墙的标题"：工具栏「＋新标签」传 null（得到"书签"），
+        /// 启动窗口传 NewTabPage.StartupTitle（得到"启动页"）。传了具体地址时该参数无意义。
         /// </summary>
-        public async void NewTab(string url)
+        public async void NewTab(string url, string wallTitle)
         {
             var view = new WebView2();
             view.Dock = DockStyle.Fill;
@@ -254,23 +264,34 @@ namespace LoongBrowser
             }
             else
             {
-                ShowNewTabPage(tab);
+                ShowNewTabPage(tab, string.IsNullOrEmpty(wallTitle) ? NewTabPage.NewTabTitle : wallTitle);
             }
         }
 
         /// <summary>把标签页渲染成"新标签页（书签墙）"</summary>
         public void ShowNewTabPage(TabInfo tab)
         {
+            ShowNewTabPage(tab, NewTabPage.NewTabTitle);
+        }
+
+        /// <summary>
+        /// 把标签页渲染成书签墙。
+        /// title 只在"启动页"这个入口上不同（"启动页" vs "书签"），渲染内容一样；
+        /// 表头标题跟着 title 走，用户一眼能看出这是启动页还是新标签页。
+        /// </summary>
+        public void ShowNewTabPage(TabInfo tab, string title)
+        {
             if (tab == null || tab.View == null) return;
             var core = tab.View.CoreWebView2;
             if (core == null) return;
             tab.ShowingNewTabPage = true;
+            tab.WallTitle = title;
             if (!NewTabPage.Enabled)
             {
                 core.Navigate(NewTabPage.HomeUrl);
                 return;
             }
-            core.NavigateToString(NewTabPage.BuildHtml(Bookmarks != null ? Bookmarks.Items : null));
+            core.NavigateToString(NewTabPage.BuildHtml(Bookmarks != null ? Bookmarks.Items : null, title));
             // 缺图标的书签：后台补抓，抓到一个就回来刷新一次页面
             NewTabPage.RequestMissingIcons(Bookmarks != null ? Bookmarks.Items : null, OnIconReady);
         }
@@ -333,7 +354,8 @@ namespace LoongBrowser
         {
             foreach (var t in _list)
             {
-                if (t.ShowingNewTabPage) ShowNewTabPage(t);
+                // 按每张墙自己的标题重渲染：启动页刷完仍是"启动页"
+                if (t.ShowingNewTabPage) ShowNewTabPage(t, t.WallTitle);
             }
         }
 

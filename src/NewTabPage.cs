@@ -1,5 +1,8 @@
 // NewTabPage.cs —— 新标签页：应用自己生成的"书签墙"
 //
+// 两个入口共用这一张墙：工具栏「＋新标签」→ 标题"书签"；
+// 浏览器启动（未设置指定网站）→ 标题"启动页"。标题之外的渲染完全一致。
+//
 // 实现方式：拼 HTML 后用 CoreWebView2.NavigateToString 注入，而不是导航到本地文件。
 //   · 不需要网络即可渲染；图标已缓存时以 data: URI 内联，离线也能显示
 //   · 拿不到合法图标的站点统一显示内置的空白图标（NewTabPage.UseLetterFallback=true 可改回首字母色块）
@@ -17,11 +20,26 @@ namespace LoongBrowser
         /// <summary>新标签页是否展示书签墙（工具菜单可切换；关闭即回到空白页）</summary>
         public static bool Enabled = true;
 
-        /// <summary>启动窗口（无命令行参数）时打开的页面。按"默认主页=空白页"的既有设定保持空白；</summary>
+        /// <summary>空标签页（书签墙被关掉、又没有其他地址时）导航到的地址</summary>
         public const string HomeUrl = "about:blank";
 
-        /// <summary>启动时是否也显示书签墙（默认 false：只有"＋新标签"才显示，尊重空白主页设定）</summary>
-        public static bool UseForStartup = false;
+        /// <summary>工具栏「＋新标签」上那张墙的页头文案</summary>
+        public const string NewTabTitle = "书签";
+
+        /// <summary>
+        /// 书签墙的**标签页标题**。页头写"书签"，标签写"新标签页" —— 沿用旧值，
+        /// 标签条上的文字是用户已经认得的，不因为加启动页就改掉。
+        /// </summary>
+        public const string NewTabDocumentTitle = "新标签页";
+
+        /// <summary>浏览器启动时那张墙的页头文案与标签页标题（同一套渲染，只是叫法不同）</summary>
+        public const string StartupTitle = "启动页";
+
+        /// <summary>由页头文案推出标签页标题：只有书签墙两者不同，启动页直接同名</summary>
+        public static string DocumentTitleOf(string wallTitle)
+        {
+            return (wallTitle == NewTabTitle) ? NewTabDocumentTitle : wallTitle;
+        }
 
         /// <summary>书签卡片数量上限，超出只渲染前 N 个</summary>
         public const int MaxCards = 500;
@@ -52,9 +70,21 @@ namespace LoongBrowser
             return s == "http" || s == "https" || s == "file";
         }
 
-        /// <summary>生成新标签页 HTML（书签为空时显示引导页）</summary>
+        /// <summary>生成书签墙 HTML（书签为空时显示引导页）</summary>
         public static string BuildHtml(IList<BookmarkItem> bookmarks)
         {
+            return BuildHtml(bookmarks, NewTabTitle);
+        }
+
+        /// <summary>
+        /// 生成书签墙 HTML。
+        /// title 只是墙的标题（"书签" / "启动页"），决定 <c>&lt;title&gt;</c> 与页头文案，
+        /// 其余渲染完全一致 —— 两处共用同一套卡片、图标与点击桥。
+        /// </summary>
+        public static string BuildHtml(IList<BookmarkItem> bookmarks, string wallTitle)
+        {
+            // 注意：函数体内已有局部变量 title（单个书签的标题），参数不能同名
+            string head = string.IsNullOrEmpty(wallTitle) ? NewTabTitle : wallTitle;
             int total = (bookmarks == null) ? 0 : bookmarks.Count;
             var sb = new StringBuilder(24 * 1024);
 
@@ -64,7 +94,7 @@ namespace LoongBrowser
 
             sb.Append("<!DOCTYPE html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\">");
             sb.Append("<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'\">");
-            sb.Append("<title>新标签页</title><style>").Append(Css);
+            sb.Append("<title>").Append(Esc(DocumentTitleOf(head))).Append("</title><style>").Append(Css);
             if (blankUri != null)
                 sb.Append(".icb{background-image:url('").Append(blankUri).Append("')}");
             sb.Append("</style></head><body>");
@@ -73,7 +103,8 @@ namespace LoongBrowser
             int rendered = 0;
             if (total > 0) rendered = CountRenderable(bookmarks);
 
-            sb.Append("<div class=\"hd\"><span class=\"ttl\">书签</span><span class=\"cnt\">")
+            sb.Append("<div class=\"hd\"><span class=\"ttl\">").Append(Esc(head))
+              .Append("</span><span class=\"cnt\">")
               .Append(rendered.ToString()).Append(" 个</span></div>");
 
             if (rendered == 0)

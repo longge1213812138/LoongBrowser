@@ -2,9 +2,14 @@
 # Usage: powershell -File tests\run_zoom_test.ps1
 $root = Split-Path $PSScriptRoot -Parent
 
-$csc = Join-Path $env:WINDIR "Microsoft.NET\Framework64\v4.0.30319\csc.exe"
+# Prefer the vendored Roslyn: legacy csc is C# 5 only and src\ now uses modern syntax
+# (async inside catch, etc.), so the legacy fallback can no longer compile the app sources.
+$csc = Join-Path $root "tools\roslyn\csc.exe"
+if (-not (Test-Path $csc)) { $csc = Join-Path $env:WINDIR "Microsoft.NET\Framework64\v4.0.30319\csc.exe" }
 if (-not (Test-Path $csc)) { $csc = Join-Path $env:WINDIR "Microsoft.NET\Framework\v4.0.30319\csc.exe" }
 if (-not (Test-Path $csc)) { Write-Output "ERROR: csc.exe not found"; exit 1 }
+$langArgs = @()
+if ($csc -like "*roslyn*") { $langArgs += "/langversion:latest" }
 
 $outDir = Join-Path $PSScriptRoot "_out_zoom"
 if (Test-Path $outDir) { Remove-Item $outDir -Recurse -Force }
@@ -31,7 +36,7 @@ Get-ChildItem (Join-Path $root "src") -Filter *.cs |
     ForEach-Object { $src += $_.FullName }
 $src += (Join-Path $PSScriptRoot "ZoomTest.cs")
 
-$cmdArgs = @("/nologo", "/target:exe", "/codepage:65001", "/optimize+", ("/main:LoongBrowser.ZoomTest"), ("/out:" + $exe))
+$cmdArgs = @("/nologo", "/target:exe", "/codepage:65001", "/optimize+", ("/main:LoongBrowser.ZoomTest")) + $langArgs + @("/out:" + $exe)
 foreach ($r in $refs) { $cmdArgs += ("/r:" + $r) }
 foreach ($s in $src) { $cmdArgs += $s }
 

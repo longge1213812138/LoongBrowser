@@ -52,6 +52,20 @@ _Avoid_: 初始化玻璃, 启动玻璃
 Vista/Win7 的原生组合器玻璃；本项目不实现，仅作视觉参照。
 _Avoid_: 用它称呼本项目当前的玻璃效果
 
+### 页面
+
+**Bookmark Wall**:
+新标签页的内容形态：把你的全部书签排成带图标的卡片墙，由 `NewTabPage.BuildHtml` 生成后以 `NavigateToString` 注入，地址仍保持内部页。
+_Avoid_: 书签页, 收藏页, 起始页
+
+**Startup Page**:
+浏览器启动时填满窗口的那个页面，三选一：Blank（默认）/ Bookmark Wall / 指定网站。它**不**影响「＋新标签」打开什么。
+_Avoid_: 主页, 首页, HomePage
+
+**Wall Title**:
+某一张书签墙的页头文案：「＋新标签」开的叫「书签」，启动时开的叫「启动页」。标签页标题另行映射（Bookmark Wall 仍是「新标签页」），所以两个入口一眼可辨。
+_Avoid_: 标题, 页头, caption
+
 ### 文字渲染
 
 **Glass Text**:

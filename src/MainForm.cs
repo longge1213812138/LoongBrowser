@@ -50,6 +50,9 @@ namespace LoongBrowser
             _bookmarks = new BookmarkStore();
             _downloads = new DownloadStore();
             _history = new HistoryStore();
+
+            // 启动页设置：要赶在下面 NewTab 之前读出来
+            StartupPageSettings.Load();
             
             // 加载翻译配置
             TranslationService.LoadConfig();
@@ -104,11 +107,12 @@ namespace LoongBrowser
                 if (_tabMgr != null) _tabMgr.RefreshNewTabPages();
             };
 
-            // 启动窗口：保持"默认主页 = 空白页"的设定；
-            // 只有"＋新标签"（NewTab(null)）才展示书签墙（NewTabPage.UseForStartup 可改为启动即显示）
-            _tabMgr.NewTab(string.IsNullOrEmpty(initialUrl) && !NewTabPage.UseForStartup
-                ? NewTabPage.HomeUrl
-                : initialUrl);
+            // 启动窗口：命令行带了地址就用它；否则按「启动页」设置（空白页 / 书签墙 / 指定网站）。
+            // 注意与工具栏「＋新标签」的分工：那个入口永远是书签墙（标题"书签"），
+            // 而启动即书签墙时标题写"启动页" —— 用户一眼看得出这是启动页还是新标签页。
+            _tabMgr.NewTab(
+                StartupPageSettings.InitialUrl(initialUrl),
+                StartupPageSettings.InitialWallTitle(initialUrl));
 
             // 轮询接收后续实例转发来的 URL（单实例机制）
             _lastUrlTick = DateTime.Now.Ticks;
@@ -335,6 +339,7 @@ namespace LoongBrowser
                         CoreWebView2BrowsingDataKinds.Cookies, "清理 Cookie（将退出所有网站的登录状态）");
                 }),
                 ChromeMenuItem.Separator(),
+                ChromeMenuItem.Item("启动页设置...", delegate { ShowStartupPageSettings(); }),
                 ChromeMenuItem.Check("新标签页显示书签", NewTabPage.Enabled, delegate
                 {
                     NewTabPage.Enabled = !NewTabPage.Enabled;
@@ -713,6 +718,34 @@ namespace LoongBrowser
             using (var dlg = new TranslationDialog(pageText))
             {
                 dlg.ShowDialog(this);
+            }
+        }
+
+        // ---------- 启动页 ----------
+
+        /// <summary>打开启动页设置对话框（只影响下次启动；当前窗口不动）</summary>
+        private void ShowStartupPageSettings()
+        {
+            using (var dlg = new StartupPageDialog(CurrentPageUrl()))
+            {
+                dlg.ShowDialog(this);
+            }
+        }
+
+        /// <summary>当前标签页的网页地址；新标签页/空白页等内部页返回 null（不能当启动页）</summary>
+        private string CurrentPageUrl()
+        {
+            try
+            {
+                var core = _tabMgr.ActiveCore();
+                if (core == null) return null;
+                string src = core.Source;
+                if (NewTabPage.IsInternalUrl(src)) return null;
+                return NewTabPage.IsSafeUrl(src) ? src : null;
+            }
+            catch (Exception)
+            {
+                return null;
             }
         }
 

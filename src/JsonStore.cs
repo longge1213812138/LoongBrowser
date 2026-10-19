@@ -10,16 +10,36 @@ namespace LoongBrowser
     /// <summary>应用所有本地数据的存放位置约定</summary>
     public static class AppPaths
     {
+        /// <summary>
+        /// 测试专用覆盖：非空时替代 <see cref="DataDir"/> / <see cref="UserDataDir"/> 的根目录。
+        /// 生产代码从不赋值（恒为 null），所以默认行为一个字节都不变；
+        /// 端到端测试靠它把用户数据、内核数据整体挪到临时目录里跑。
+        /// </summary>
+        public static string RootOverride;
+
+        private static bool HasOverride
+        {
+            get { return !string.IsNullOrEmpty(RootOverride); }
+        }
+
         /// <summary>书签、下载记录等用户数据目录：%APPDATA%\LoongBrowser</summary>
         public static string DataDir
         {
-            get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "LoongBrowser"); }
+            get
+            {
+                if (HasOverride) return Path.Combine(RootOverride, "Roaming", "LoongBrowser");
+                return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "LoongBrowser");
+            }
         }
 
         /// <summary>WebView2 用户数据目录（缓存/Cookie 等所在）：%LOCALAPPDATA%\LoongBrowser\WebView2</summary>
         public static string UserDataDir
         {
-            get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LoongBrowser", "WebView2"); }
+            get
+            {
+                if (HasOverride) return Path.Combine(RootOverride, "Local", "LoongBrowser", "WebView2");
+                return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LoongBrowser", "WebView2");
+            }
         }
 
         /// <summary>默认下载目录：系统"下载"文件夹</summary>

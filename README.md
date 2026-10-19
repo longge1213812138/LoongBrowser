@@ -14,6 +14,7 @@
 - **应用图标** —— 罗盘环扁平图标（`icons/D-compass.svg`），构建时经 csc `/win32icon:` 直接嵌入 exe（无 `.resx`/`.rc` 资源文件）；ICO 含 16~256 共 9 档，小尺寸按档重绘以保证可辨识
 - **单实例 + 真·多窗口** —— 重复启动会把地址转发给已开窗口（适合当默认浏览器）；右键可在进程内开新窗口，共享同一个内核环境，不争抢用户数据目录
 - **新标签页 = 书签墙** —— 新标签页直接展示全部书签，每个书签带网站图标
+- **启动页可配置** —— 浏览器启动时显示空白页（默认）/ 书签墙 / 你指定的任意网站；「＋新标签」不受影响，永远显示书签墙
 - **本地文件直开** —— 双击 `.html` 文件（设为默认打开方式后），或把文件拖进窗口
 
 ---
@@ -47,6 +48,21 @@
 - 所有图标统一归一化为 **32×32 PNG** 缓存到本地，离线也能显示；拿不到图标的站点不会反复重试
 - 空书签时显示引导页（浅色主题；暗色模式已按 ADR-0002 移除）
 - 工具菜单可一键关闭（回到空白新标签页）
+
+### 启动页
+
+「工具 → 启动页设置...」三选一，立即保存、下次启动生效：
+
+| 选项 | 启动时 |
+|---|---|
+| 空白页（默认） | `about:blank`，与加此功能之前完全一致 |
+| 书签墙 | 启动即展示全部书签（页头与标签都写「启动页」） |
+| 打开指定网站 | 你填的那个地址；也可一键填入"当前标签页地址" |
+
+- **与「＋新标签」的分工**：那个按钮**永远**显示书签墙，不受这里的设置影响
+- 填地址时同样支持补协议、本地路径（转 `file:///`）与关键词搜索；`javascript:` / `data:` / `about:` 这类伪协议会被拒绝
+- 命令行带了地址（双击 `.html`、设为默认浏览器后从外部打开）时**优先于**启动页设置 —— 否则双击文件会被启动页抢走
+- 设置落在 `%APPDATA%\LoongBrowser\startup.json`；删掉该文件即恢复默认（空白页）
 
 ### 数据与设置
 
@@ -87,6 +103,7 @@
 | `%APPDATA%\LoongBrowser\downloads.json` | 下载记录 |
 | `%APPDATA%\LoongBrowser\favicons\` | 网站图标缓存（一个域名一个 PNG，删掉即自动重建） |
 | `%APPDATA%\LoongBrowser\popup.json` | 小窗设置（是否默认置顶） |
+| `%APPDATA%\LoongBrowser\startup.json` | 启动页设置（空白页 / 书签墙 / 指定网站） |
 | `%APPDATA%\LoongBrowser\kernel.log` | 内核初始化诊断日志（**仅失败时写入**；SDK/运行时版本、数据目录状态、完整异常链。设环境变量 `LOONGBROWSER_KDIAG=1` 可记录正常启动） |
 | `%LOCALAPPDATA%\LoongBrowser\WebView2\` | 内核数据（缓存 / Cookie / 会话） |
 
@@ -126,6 +143,8 @@ powershell -ExecutionPolicy Bypass -File build.ps1
 | 新标签页（单元） | `powershell -File tests\run_newtab_test.ps1` | 页面生成、HTML 转义、危险协议过滤、图标内联、数量上限 | 42 |
 | 打开本地 HTML（端到端） | `powershell -File tests\run_e2e_openfile_test.ps1` | 真实内核：修复前的 DNS 失败 vs 修复后正常渲染 | 5 |
 | 新标签页（端到端） | `powershell -File tests\run_newtab_e2e.ps1` | 真实内核 + 真实 `TabManager`：渲染、图标两条通道、点击桥与越权拒绝 | 18 |
+| 启动页设置（单元） | `powershell -File tests\run_startup_test.ps1` | 三种启动模式的决策与优先级、伪协议拦截、盘符与 host:port 不误判、落盘往返与损坏回落、墙标题与标签页标题分离、对话框三选一与校验 | 85 |
+| 启动页（端到端） | `powershell -File tests\run_startup_e2e.ps1` | 真实内核 + 真实 `MainForm`：三种模式真的打开对应页面、设置跨重启保留；并逐项验证「＋新标签」在三种模式下都仍是书签墙 | 20 |
 | 画中画弹窗（端到端） | `powershell -File tests\run_pip_popup_e2e.ps1` | 真实内核：复现修复前「当前页被顶成空白页」、验证修复后页面不受影响且小窗被允许；并探测真实 B 站视频页 | 8 |
 | 小窗置顶（端到端） | `powershell -File tests\run_popup_window_e2e.ps1` | 真实内核 + 真实 `TabManager`：小窗创建、默认置顶、开关切换与记忆、按请求尺寸、opener 可写入小窗、`window.close()` 联动关闭 | 12 |
 | 浏览历史（单元） | `powershell -File tests\run_history_test.ps1` | 记录与排序、只记可导航地址、同址去重、标题回填、删除/清空、条数上限、落盘与重载、时间分组 | 27 |
@@ -139,7 +158,7 @@ powershell -ExecutionPolicy Bypass -File build.ps1
 | 玻璃外壳（回归） | `powershell -File tests\run_glass_test.ps1` | 外壳/标题栏每帧先清面再画前景（窗口变窄不留旧地址栏）、绘制前布局定稿、`GlassManager.Apply` 幂等、玻璃必须显示后再应用（不在构造函数里）、清面后整块重画不被失效矩形裁剪 | 9 |
 | 外壳渲染（截图） | `powershell -File tests\run_chrome_preview.ps1` | 字体/字号/纯黑文字、布局与命中矩形、玻璃区每帧清面且不铺底色、前景文字与图标确实画出；输出 `tests\chrome_preview*.png` 供人工核对 | 24 |
 
-运行结果写入 `tests\*_log.txt`。合计 **407** 项用例。
+运行结果写入 `tests\*_log.txt`。合计 **512** 项用例。
 
 ---
 
@@ -158,6 +177,7 @@ src/
   KernelDiag.cs          内核初始化诊断：环境事实 + 异常链落盘（仅失败时写；LOONGBROWSER_KDIAG=1 记录正常路径）
   ZoomManager.cs         网页缩放：50%~200% 区间与步进、预设档位、按键/滚轮判定
   NewTabPage.cs          新标签页（书签墙）HTML 生成与安全过滤
+  StartupPage.cs         启动页设置（空白页 / 书签墙 / 指定网站）+ 设置对话框
   FaviconCache.cs        网站图标三级来源 + 归一化缓存
   BookmarkStore.cs       书签存取 + 书签管理对话框
   DownloadStore.cs       下载记录
@@ -189,7 +209,7 @@ tests/                   测试与 API 诊断工具（见上表），以及各�
 | 参数 | 默认值 | 说明 |
 |---|---|---|
 | `NewTabPage.Enabled` | `true` | 新标签页是否显示书签墙（工具菜单可切换） |
-| `NewTabPage.UseForStartup` | `false` | 启动窗口是否也显示书签墙（默认保持空白主页） |
+| `StartupPageSettings.Mode` | `blank` | 启动页：`blank` 空白页 / `wall` 书签墙 / `url` 指定网站（工具菜单可改，写入 `startup.json`） |
 | `NewTabPage.UseLetterFallback` | `false` | 无图标时改用「首字母色块」而不是空白图标 |
 | `NewTabPage.MaxCards` / `MaxIcons` | `500` / `60` | 书签卡片数 / 内联图标数上限 |
 | `FaviconCache.EnableRemoteFetch` | `true` | 是否允许联网抓 `/favicon.ico`（关闭后只用已访问站点的图标 + 空白图标） |
@@ -237,3 +257,4 @@ tests/                   测试与 API 诊断工具（见上表），以及各�
 - [开发计划书.md](开发计划书.md) —— 需求与设计取舍
 - [双击打开HTML报错-根因分析与修复报告.md](双击打开HTML报错-根因分析与修复报告.md) —— v1.0.1：双击本地 HTML 报 DNS 错的根因分析与修复
 - [新标签页书签墙-实现说明与边界.md](新标签页书签墙-实现说明与边界.md) —— 书签墙的实现方式、配置项与边界清单
+- [docs/adr/0008-startup-page-vs-new-tab.md](docs/adr/0008-startup-page-vs-new-tab.md) —— 为什么启动页与「＋新标签」必须分开，以及默认值为何保持空白页
