@@ -151,6 +151,7 @@ powershell -ExecutionPolicy Bypass -File build.ps1
 | 关闭后残留（回归） | `powershell -File tests\run_residue_test.ps1` | 真实 `LoongBrowserContext` + 真实 `MainForm`：悬停出提示窗后关窗、以及「启动页收藏→关窗」两条路径，`Application.Run` 必须返回；关窗前 `OpenForms` 里还挂着 `ChromeTooltip` | 11 |
 | 打开方式条目唯一（回归） | `powershell -File tests\run_assoc_test.ps1` | 用 Explorer 自己的 `SHAssocEnumHandlers` 判定（与右键菜单同口径）：登记后只出现一条 LoongBrowser、指向当前 exe；塞入三类历史遗留后确实变成多条，清理后回到一条；其它应用不受影响 | 8 |
 | 画中画弹窗（端到端） | `powershell -File tests\run_pip_popup_e2e.ps1` | 真实内核：复现修复前「当前页被顶成空白页」、验证修复后页面不受影响且小窗被允许；并探测真实 B 站视频页 | 8 |
+| 右键新窗口（端到端） | `powershell -File tests\run_context_new_window_e2e.ps1` | 真实窗口 + SendInput 真实右键：自定义菜单在鼠标旁弹出（含「在新窗口中打开链接」）、真实左键点选后原窗口 + 新窗口 = 2、新窗口独立加载链接、互不干扰、关闭其一另一窗仍存活 | 12 |
 | 小窗置顶（端到端） | `powershell -File tests\run_popup_window_e2e.ps1` | 真实内核 + 真实 `TabManager`：小窗创建、默认置顶、开关切换与记忆、按请求尺寸、opener 可写入小窗、`window.close()` 联动关闭 | 12 |
 | 浏览历史（单元） | `powershell -File tests\run_history_test.ps1` | 记录与排序、只记可导航地址、同址去重、标题回填、删除/清空、条数上限、落盘与重载、时间分组 | 27 |
 | 浏览历史（端到端） | `powershell -File tests\run_history_e2e.ps1` | 真实内核 + 真实 `TabManager`：访问真实站点写入历史并带标题、内部页不记、新→旧、刷新去重、删除与清空落盘 | 13 |
@@ -166,7 +167,7 @@ powershell -ExecutionPolicy Bypass -File build.ps1
 | 玻璃外壳（回归） | `powershell -File tests\run_glass_test.ps1` | 外壳/标题栏每帧先清面再画前景（窗口变窄不留旧地址栏）、绘制前布局定稿、`GlassManager.Apply` 幂等、玻璃必须显示后再应用（不在构造函数里）、清面后整块重画不被失效矩形裁剪 | 9 |
 | 外壳渲染（截图） | `powershell -File tests\run_chrome_preview.ps1` | 字体/字号/纯黑文字、布局与命中矩形、玻璃区每帧清面且不铺底色、前景文字与图标确实画出；输出 `tests\chrome_preview*.png` 供人工核对 | 24 |
 
-运行结果写入 `tests\*_log.txt`。合计 **610** 项用例。
+运行结果写入 `tests\*_log.txt`。合计 **622** 项用例。
 
 ---
 
@@ -182,7 +183,7 @@ src/
   SnapController.cs      Aero Snap：贴边左右半屏、贴顶最大化、从最大化拖离还原（自实现，见 ADR-0010）
   ChromeTooltip.cs       工具栏按钮的悬停提示窗（1 秒后显示名字；分层窗口色键透明，不抢焦点）
   FullscreenManager.cs   两套全屏：视频真全屏（Fullscreen API，Padding 归零、铺满整屏、置顶）+ 网页全屏（F11/菜单，外壳让位、标题栏与任务栏保留），页面内 F11 转发与多窗口状态隔离
-  TabManager.cs          标签页与 WebView2 生命周期、右键菜单、图标采集、新标签页渲染、网页缩放 API、内核初始化失败自救
+  TabManager.cs          标签页与 WebView2 生命周期、右键菜单（自绘 ChromeDropDown）、图标采集、新标签页渲染、网页缩放 API、内核初始化失败自救
   KernelDiag.cs          内核初始化诊断：环境事实 + 异常链落盘（仅失败时写；LOONGBROWSER_KDIAG=1 记录正常路径）
   ZoomManager.cs         网页缩放：50%~200% 区间与步进、预设档位、按键/滚轮判定
   NewTabPage.cs          新标签页（书签墙）HTML 生成与安全过滤

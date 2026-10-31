@@ -30,6 +30,21 @@ status_tmp.txt
 tests/_out*/
 tests/*_log.txt
 
+# test screenshots / images — all regenerable output of the test scripts
+# (run_chrome_preview.ps1, run_tabstrip_test.ps1, run_context_new_window_e2e.ps1, ...)
+tests/*.png
+tests/*.jpg
+tests/*.jpeg
+tests/*.gif
+tests/*.bmp
+tests/*.webp
+tests/**/*.png
+tests/**/*.jpg
+tests/**/*.jpeg
+tests/**/*.gif
+tests/**/*.bmp
+tests/**/*.webp
+
 # icon tooling scratch (regenerable via icons/_make_ico.py)
 icons/_ico_preview.png
 icons/preview.png

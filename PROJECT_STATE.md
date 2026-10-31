@@ -1,6 +1,6 @@
 # PROJECT_STATE — LoongBrowser 交接材料
 
-> 更新：2026-10-19 20:40 ｜ 状态：**玻璃常驻、边缘缩放/分屏、工具栏悬停提示、两套全屏已实现，待用户实机确认**
+> 更新：2026-11-01 00:30 ｜ 状态：**链接右键菜单已重做（自绘菜单 + COM 异常安全读取），「在新窗口中打开链接」可用，待用户实机确认**
 > 工作目录：`C:\Users\91533\Desktop\LoongBrowser-master` ｜ 分支：`main` ｜ HEAD：`4eec1c2`
 > 权威资料：功能描述以 `README.md` 为准；本文档只记"接手需要知道、README 没写"的事。
 
@@ -279,6 +279,61 @@ WebView2 client(screen) = {6,6,2548,1428}    视频少了 12x12
 两套各自的形态、`Padding`、可见性、窗口范围、置顶、WebView2 归属，叠加与逐项还原。
 `run_fullscreen_e2e.ps1` 从 38 项增到 39 项（补 D15：网页全屏也退出后 WebView2 才回标签页）。
 共 610 项用例。详见 `docs/adr/0011-two-kinds-of-fullscreen.md`。
+
+## 二·十二、链接右键菜单重做 + 「在新窗口中打开链接」（2026-11-01）
+
+**用户报的问题**：右键点击网页中的链接，不能从新窗口打开；期望打开后是两个新的浏览器实例。
+
+### 症状：右键菜单根本不弹自定义菜单
+
+真实截图显示，右键后出现的是 **WebView2 内核的默认英文菜单**
+（Open link in new window / Copy link address / Inspect），不是本程序的中文菜单。
+
+### 根因是三处叠加，逐个都能单独致命
+
+| # | 根因 | 后果 |
+|---|---|---|
+| 1 | ContextMenuTarget 的属性都是 COM 调用，在某些场景抛 0x8000000E（在意外的时间调用了方法） | 异常逃出 BuildContextMenu → e.Handled = true 执行不到 → **退回内核默认菜单** |
+| 2 | 旧代码只往 e.MenuItems 塞数据，**从不显示任何菜单** | 即便异常没发生，自定义菜单也弹不出来（e.Handled = true 的语义是「我来处理」，不是「我会显示」） |
+| 3 | 菜单命令回调在 WebView2 上下文里直接 Program.OpenNewWindow | 在错误的线程上下文操作窗口 |
+
+第 1 条是**探针量出来的**，不是猜的：AppDomain.FirstChanceException 捕获到
+COMException (0x8000000E) ... at CoreWebView2ContextMenuTarget.get_SelectionText()。
+
+### 修法
+
+- **COM 属性逐个安全读取**：SafeTargetString / SafeIsEditable 捕获异常，哪个读不到当没有，
+  菜单照常构建（e.Handled = true 必须能执行到）。
+- **改用外壳同一套自绘菜单**：ChromeDropDown(items, 160).ShowAt(屏幕坐标) —— 与菜单栏同源、
+  同字体、同配色，OnDeactivate 自动收起。
+- **坐标要换算**：e.Location 是 **WebView2 客户区坐标**（原点在网页区域左上角），不是屏幕坐标。
+  直接传给 ShowAt 会把菜单弹到屏幕左上角 —— 必须 view.PointToScreen 换算。
+- **新窗口走延迟执行**：ScheduleNewWindow → 定时器 → Program.OpenNewWindow，
+  与 ScheduleNewTab 同一机制，离开 WebView2 回调上下文再开窗口。
+- **菜单项闭包只引用局部变量**，不在回调里回读 COM 对象。
+
+### 结果
+
+右键 → 自绘菜单在鼠标旁弹出 → 点「在新窗口中打开链接」→ **原窗口保留 + 新的独立 Browser Window 打开**，
+两个窗口共享同一个内核环境（不争抢用户数据目录），互不影响，关掉其一另一个照常存活。
+
+### 测试
+
+tests\run_context_new_window_e2e.ps1（12 项）：真实 MainForm + 真实 WebView2 +
+SendInput **真实右键**与**真实左键点选**（菜单项坐标从 ChromeDropDown 的 _items / _heights
+实际布局算出，不靠猜）。覆盖：菜单在鼠标旁弹出、含目标命令、点选后窗口数 = 2、
+新窗口是独立 MainForm（不同句柄）而非新标签、原窗口不跳转也不增标签、
+新窗口加载的是右键链接、新窗口导航不影响原窗口、关闭其一另一窗存活。
+
+回归：run_popup_route_test.ps1 / run_residue_test.ps1 / run_newtab_e2e.ps1 /
+run_glass_test.ps1 / run_chrome_preview.ps1 全绿；build.ps1 BUILD OK。
+
+### 一条经验
+
+「菜单没弹出来」和「菜单项点击无效」是两个不同的故障，判据必须分开看：
+先看**事件有没有到达**（ContextMenuRequested 是否触发），再看**菜单有没有显示**
+（有没有真的 Show 出来），最后才看**命令有没有执行**。
+本案三段全断，只盯最后一段会一直找不到根因。
 
 ## 三、本机环境注意事项（重要，接手必读）
 

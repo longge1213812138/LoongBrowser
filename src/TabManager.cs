@@ -28,6 +28,7 @@ namespace LoongBrowser
         // ---------- 右键菜单延迟执行：WebView2 回调中无法直接操作标签页，
         // 用静态字段存待执行的 URL，由定时器在 UI 线程上轮询执行 ----------
         private static string _pendingNewTabUrl;
+        private static string _pendingNewWindowUrl;
         private static Timer _pendingTimer;
         // 进程内共享同一个内核环境：多窗口（右键"在新窗口中打开"）不会争抢用户数据目录
         private static CoreWebView2Environment _env;
@@ -70,6 +71,13 @@ namespace LoongBrowser
                 _pendingTimer.Interval = 50;
                 _pendingTimer.Tick += delegate
                 {
+                    // 新窗口与新标签页一样：必须离开 WebView2 回调上下文，在 UI 线程上执行
+                    string winUrl = _pendingNewWindowUrl;
+                    if (!string.IsNullOrEmpty(winUrl))
+                    {
+                        _pendingNewWindowUrl = null;
+                        Program.OpenNewWindow(winUrl);
+                    }
                     string url = _pendingNewTabUrl;
                     if (!string.IsNullOrEmpty(url))
                     {
@@ -490,88 +498,96 @@ namespace LoongBrowser
             var target = e.ContextMenuTarget;
 
             // 输入框等可编辑场景：交给 WebView2 默认菜单（保留复制/粘贴/全选）
-            if (target != null && target.IsEditable) return;
+            if (target != null && SafeIsEditable(target)) return;
 
-            bool isLink = target != null && target.HasLinkUri && !string.IsNullOrEmpty(target.LinkUri);
-            bool isImage = target != null && target.HasSourceUri && !string.IsNullOrEmpty(target.SourceUri);
-            string selectionText = (target != null) ? target.SelectionText : null;
+            // ContextMenuTarget 的每个属性都是一次 COM 调用，某些场景会抛
+            // 0x8000000E（"在意外的时间调用了方法"）——例如 WebView2 的编辑模式窗口。
+            // 以前在这里直接读 SelectionText，异常逃出后 e.Handled = true 永远执行不到，
+            // 自定义菜单（含"在新窗口中打开链接"）整体丢失，退回内核默认英文菜单。
+            // 所以逐属性捕获：哪个读不到就当没有，菜单照常构建。
+            string linkUri = SafeTargetString(target, delegate { return target.LinkUri; });
+            string sourceUri = SafeTargetString(target, delegate { return target.SourceUri; });
+            string selectionText = SafeTargetString(target, delegate { return target.SelectionText; });
+
+            bool isLink = !string.IsNullOrEmpty(linkUri);
+            bool isImage = !string.IsNullOrEmpty(sourceUri);
             bool hasSelection = !string.IsNullOrEmpty(selectionText);
-            var items = e.MenuItems;
+
+            // 用外壳同一套自绘菜单（ChromeDropDown）：项的构建与显示分离，
+            // 之前只往 e.MenuItems 塞数据却从不显示，用户右键后什么都看不到。
+            var items = new List<ChromeMenuItem>();
 
             // 常规导航项
             if (view.CanGoBack)
-                items.Add(CreateItem("后退", delegate { view.GoBack(); }));
+                items.Add(ChromeMenuItem.Item("后退", delegate { view.GoBack(); }));
             if (view.CanGoForward)
-                items.Add(CreateItem("前进", delegate { view.GoForward(); }));
-            items.Add(CreateItem("刷新", delegate { view.CoreWebView2.Reload(); }));
+                items.Add(ChromeMenuItem.Item("前进", delegate { view.GoForward(); }));
+            items.Add(ChromeMenuItem.Item("刷新", delegate { view.CoreWebView2.Reload(); }));
 
             if (isLink)
             {
-                items.Add(CreateSeparator());
-                items.Add(CreateItem("在新标签页中打开链接", delegate { ScheduleNewTab(target.LinkUri); }));
-                items.Add(CreateItem("在新窗口中打开链接", delegate { Program.OpenNewWindow(MainForm.NormalizeUrl(target.LinkUri)); }));
-                items.Add(CreateItem("复制链接地址", delegate
+                items.Add(ChromeMenuItem.Separator());
+                string copyLink = linkUri;
+                items.Add(ChromeMenuItem.Item("在新标签页中打开链接", delegate { ScheduleNewTab(copyLink); }));
+                items.Add(ChromeMenuItem.Item("在新窗口中打开链接", delegate { ScheduleNewWindow(MainForm.NormalizeUrl(copyLink)); }));
+                items.Add(ChromeMenuItem.Item("复制链接地址", delegate
                 {
-                    try { Clipboard.SetText(target.LinkUri); } catch (Exception) { }
+                    try { Clipboard.SetText(copyLink); } catch (Exception) { }
                 }));
             }
 
             if (isImage)
             {
-                items.Add(CreateSeparator());
-                items.Add(CreateItem("在新标签页中打开图片", delegate { ScheduleNewTab(target.SourceUri); }));
-                items.Add(CreateItem("复制图片地址", delegate
+                items.Add(ChromeMenuItem.Separator());
+                string copyImage = sourceUri;
+                items.Add(ChromeMenuItem.Item("在新标签页中打开图片", delegate { ScheduleNewTab(copyImage); }));
+                items.Add(ChromeMenuItem.Item("复制图片地址", delegate
                 {
-                    try { Clipboard.SetText(target.SourceUri); } catch (Exception) { }
+                    try { Clipboard.SetText(copyImage); } catch (Exception) { }
                 }));
             }
 
             // 选中文字时：搜索和翻译
             if (hasSelection)
             {
-                items.Add(CreateSeparator());
+                items.Add(ChromeMenuItem.Separator());
                 string searchText = selectionText.Length > 50 ? selectionText.Substring(0, 50) + "..." : selectionText;
-                items.Add(CreateItem("在新标签页中搜索 " + searchText, delegate
+                items.Add(ChromeMenuItem.Item("在新标签页中搜索 " + searchText, delegate
                 {
                     ScheduleNewTab("https://www.bing.com/search?q=" + Uri.EscapeDataString(selectionText));
                 }));
-                items.Add(CreateItem("翻译选中文字", delegate
+                items.Add(ChromeMenuItem.Item("翻译选中文字", delegate
                 {
                     TranslateText(selectionText);
                 }));
             }
 
             // 当前页面信息
-            items.Add(CreateSeparator());
-            items.Add(CreateItem("在新标签页中打开", delegate
+            items.Add(ChromeMenuItem.Separator());
+            items.Add(ChromeMenuItem.Item("在新标签页中打开", delegate
             {
                 try { ScheduleNewTab(view.CoreWebView2.Source); } catch (Exception) { }
             }));
-            items.Add(CreateItem("复制当前页面地址", delegate
+            items.Add(ChromeMenuItem.Item("复制当前页面地址", delegate
             {
                 try { Clipboard.SetText(view.CoreWebView2.Source); } catch (Exception) { }
             }));
-            
+
             // 翻译当前页面
-            items.Add(CreateItem("翻译当前页面", delegate
+            items.Add(ChromeMenuItem.Item("翻译当前页面", delegate
             {
                 TranslateCurrentPage(view);
             }));
 
             if (items.Count == 0) return; // 无可显示项时保留默认菜单
-            e.Handled = true;
-        }
 
-        private CoreWebView2ContextMenuItem CreateItem(string title, Action action)
-        {
-            var item = _env.CreateContextMenuItem(title, null, CoreWebView2ContextMenuItemKind.Command);
-            item.CustomItemSelected += delegate(object s2, object e2)
-            {
-                // WebView2 回调上下文中无法直接操作标签页（NewTab 等会被内部状态覆盖），
-                // 所以把待执行的 URL 存到静态字段，由定时器在 UI 线程上轮询执行
-                try { action(); } catch (Exception) { }
-            };
-            return item;
+            // 在鼠标位置弹出自绘菜单（与外壳菜单栏同一实现）。
+            // e.Location 是 WebView2 客户区坐标（原点在网页区域左上角），不是屏幕坐标，
+            // 必须经 view.PointToScreen 换算，否则菜单会弹到屏幕左上角而不是鼠标旁。
+            var menu = new ChromeDropDown(items, 160);
+            menu.ShowAt(view.PointToScreen(new Point((int)e.Location.X, (int)e.Location.Y)));
+
+            e.Handled = true;   // 阻止内核再弹默认菜单
         }
 
         /// <summary>设置待执行的新标签页 URL（由右键菜单回调调用，定时器会轮询执行）</summary>
@@ -580,9 +596,30 @@ namespace LoongBrowser
             _pendingNewTabUrl = url;
         }
 
-        private CoreWebView2ContextMenuItem CreateSeparator()
+        /// <summary>
+        /// 设置待执行的新窗口 URL（由右键菜单回调调用，定时器在 UI 线程上轮询执行）。
+        /// 与 ScheduleNewTab 同一机制：WebView2 的菜单命令回调上下文里不能直接操作窗口，
+        /// 必须把地址暂存、由定时器在宿主 UI 线程上真正开窗口。
+        /// </summary>
+        private static void ScheduleNewWindow(string url)
         {
-            return _env.CreateContextMenuItem("", null, CoreWebView2ContextMenuItemKind.Separator);
+            if (string.IsNullOrEmpty(url)) return;
+            _pendingNewWindowUrl = url;
+        }
+
+        /// <summary>安全读 target.IsEditable：读不到（COM 调用失败）当 false，交给自定义菜单</summary>
+        private static bool SafeIsEditable(CoreWebView2ContextMenuTarget target)
+        {
+            try { return target.IsEditable; }
+            catch (Exception) { return false; }
+        }
+
+        /// <summary>安全读 ContextMenuTarget 的字符串属性：COM 调用失败时返回 null</summary>
+        private static string SafeTargetString(CoreWebView2ContextMenuTarget target, Func<string> read)
+        {
+            if (target == null) return null;
+            try { return read(); }
+            catch (Exception) { return null; }
         }
 
         public void NavigateCurrent(string url)
